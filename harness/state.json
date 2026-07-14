@@ -16,10 +16,10 @@
       "id": "A1",
       "track": "A",
       "title": "BIP84 지갑 파생 모듈 (니모닉 → tb1 주소, wallet.js)",
-      "status": "pending",
+      "status": "done",
       "requires_human": false,
       "depends_on": [],
-      "notes": "BIP84 공식 테스트 벡터로 검증. 테스트넷 전용."
+      "notes": "회차 0 완료. BIP84 공식 벡터 3종 일치, 테스트 8개 통과 (tests/wallet.test.js)."
     },
     {
       "id": "A2",

@@ -17,6 +17,12 @@
 - **왜:** 연재 게시 + tips 수령 채널. 라이트닝 지갑으로 로그인하므로 B1이 먼저입니다.
 - **방법:** [stacker.news](https://stacker.news) → 라이트닝 로그인.
 
-## A3 — 테스트넷 faucet 코인 수령 (A1 완료 후 안내 예정)
-- **왜:** 트랙 A 학습용 전송 실습에 필요. 실자산 아님.
-- **방법:** 하네스가 주소를 생성해 일일 로그에 안내하면, signet faucet에서 캡차 풀고 전송.
+## A3 — 테스트넷 faucet 코인 수령 (지금 가능)
+- **왜:** 트랙 A 학습용 전송 실습(A5 PSBT 서명·전송)에 필요. 실자산 아님.
+- **방법:**
+  1. 터미널에서 니모닉·주소 생성 (화면에만 출력됨 — 니모닉은 종이에 적고 터미널을 닫으세요):
+     ```bash
+     node -e "const w=require('./src/wallet');const m=w.generateMnemonic();console.log('니모닉(종이에만 기록):',m);console.log(w.deriveAddress(m))"
+     ```
+  2. testnet4 faucet(예: mempool.space/testnet4/faucet)에서 캡차 풀고 위 `tb1q...` 주소로 전송.
+  3. 완료되면 니모닉을 `.env`가 아닌 **종이에만** 보관하고, `harness/state.json`의 A3 `notes`에 주소만 적어주세요.
