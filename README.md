@@ -2,6 +2,8 @@
 
 라이트닝으로 **첫 1,000원어치(약 600 sats) 비트코인을 실수령**할 때까지, 매일 스스로 한 회차씩 전진하는 자율 시스템. 전략 원본은 [비트코인_획득_전략_및_개발제안서.md](비트코인_획득_전략_및_개발제안서.md).
 
+**📊 경과 대시보드:** https://lionandthelab.github.io/lion-coin/ — main에 푸시될 때마다 GitHub Actions가 `state.json`과 일일 로그로 페이지를 다시 빌드한다.
+
 ## 작동 구조
 
 ```
@@ -13,7 +15,7 @@ launchd (매일 09:37 KST)
             ├─ pickNextTask(state)     (의존성 그래프에서 다음 작업)
             ├─ 작업 수행 (TDD) + state.json 갱신
             ├─ logs/YYYY-MM-DD.md 일일 로그
-            └─ 원자 커밋
+            └─ 원자 커밋 + push → Actions가 경과 대시보드 재배포
 ```
 
 - **상태:** [harness/state.json](harness/state.json) — 17개 작업의 의존성 그래프와 목표 지표

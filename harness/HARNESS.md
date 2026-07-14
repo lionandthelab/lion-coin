@@ -18,6 +18,7 @@
 5. **일일 로그 작성:** `logs/YYYY-MM-DD.md` (KST 날짜, `harness/lib/core.js`의 `logFileName` 기준)에 아래 형식으로 기록한다. 같은 날 두 번째 회차면 기존 파일에 `## 회차 N` 섹션을 추가한다.
 6. **사람 작업 안내 갱신:** `harness/ACTION_REQUIRED.md`를 pickNextTask의 `humanActions` 기준으로 다시 쓴다. 각 항목에 "왜 필요한지 + 정확한 실행 방법"을 적는다.
 7. **커밋:** 아래 커밋 규칙에 따라 의도별로 나눠 커밋한다.
+8. **푸시:** 회차의 모든 커밋이 끝나면 `git push origin main` 한 번으로 밀어올린다. 푸시가 되면 GitHub Actions가 경과 대시보드(https://lionandthelab.github.io/lion-coin/)를 자동 재배포한다. 충돌 시 `git pull --rebase origin main` 후 재시도하고, 그래도 실패하면 로그에 기록만 하고 종료한다 (force push 금지).
 
 ## 일일 로그 형식 (logs/YYYY-MM-DD.md)
 
