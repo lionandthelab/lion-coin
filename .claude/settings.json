@@ -12,6 +12,8 @@
       "Bash(git add:*)",
       "Bash(git commit:*)",
       "Bash(git restore --staged:*)",
+      "Bash(git push origin main)",
+      "Bash(git pull --rebase origin main)",
       "Bash(mkdir:*)",
       "Bash(ls:*)",
       "Bash(date:*)",
@@ -21,7 +23,8 @@
     "deny": [
       "Read(./.env)",
       "Read(./secrets/**)",
-      "Bash(git push:*)",
+      "Bash(git push --force:*)",
+      "Bash(git push -f:*)",
       "Bash(rm -rf:*)"
     ]
   }
