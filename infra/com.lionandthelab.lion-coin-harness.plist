@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.lionandthelab.lion-coin-harness</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>/Users/mac/Workspace/lionandthelab/lion-coin/scripts/run-harness.sh</string>
+  </array>
+  <!-- 매일 09:37 KST. 잠자던 Mac이 깨어나면 놓친 회차를 이어서 실행한다 -->
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key>
+    <integer>9</integer>
+    <key>Minute</key>
+    <integer>37</integer>
+  </dict>
+  <key>StandardOutPath</key>
+  <string>/Users/mac/Workspace/lionandthelab/lion-coin/logs/runner/launchd.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/mac/Workspace/lionandthelab/lion-coin/logs/runner/launchd.err.log</string>
+</dict>
+</plist>
