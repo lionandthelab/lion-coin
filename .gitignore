@@ -9,5 +9,8 @@ secrets/
 # 러너 원시 로그 (일일 마크다운 로그 logs/*.md 는 커밋 대상)
 logs/runner/
 
+# 대시보드 빌드 산출물 (CI가 생성)
+_site/
+
 # 시스템
 .DS_Store
