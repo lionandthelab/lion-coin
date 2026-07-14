@@ -1,0 +1,13 @@
+# 의존성
+node_modules/
+
+# 비밀 정보 — 니모닉·API 키는 절대 커밋 금지
+.env
+*.mnemonic
+secrets/
+
+# 러너 원시 로그 (일일 마크다운 로그 logs/*.md 는 커밋 대상)
+logs/runner/
+
+# 시스템
+.DS_Store
