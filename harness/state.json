@@ -69,16 +69,16 @@
     {
       "id": "B1",
       "track": "B",
-      "title": "라이트닝 지갑 개설 (LNbits 계정 또는 Blink 앱)",
+      "title": "라이트닝 지갑 개설 (Blink 앱 — 확정)",
       "status": "pending",
       "requires_human": true,
       "depends_on": [],
-      "notes": "사람 작업: 계정 생성. 커스터디얼은 소액 한정."
+      "notes": "사람 작업: Blink 앱 설치·가입. 커스터디얼은 소액 한정. 사용자 결정(2026-07-14): LNbits 데모 대신 Blink."
     },
     {
       "id": "B2",
       "track": "B",
-      "title": ".env에 LNBITS_URL / LNBITS_READ_KEY 설정",
+      "title": ".env에 BLINK_API_KEY 설정 (dashboard.blink.sv에서 Read 키 발급)",
       "status": "pending",
       "requires_human": true,
       "depends_on": ["B1"],
@@ -136,7 +136,7 @@
       "status": "pending",
       "requires_human": false,
       "depends_on": ["B1"],
-      "notes": "LNbits Pay Link 확장 사용. 정적 페이지는 site/ 폴더."
+      "notes": "Blink 라이트닝 주소(LNURL-pay) 기반 — pay.blink.sv 링크 또는 Blink API로 인보이스 생성. 정적 페이지는 site/ 폴더."
     },
     {
       "id": "B5",
