@@ -5,6 +5,7 @@ const {
   pickNextTask,
   evaluateGoal,
   parseLnbitsWallet,
+  parseBlinkWallets,
   logFileName,
 } = require('../harness/lib/core');
 
@@ -118,6 +119,30 @@ test('parseLnbitsWallet: balance가 없거나 숫자가 아니면 TypeError', ()
   assert.throws(() => parseLnbitsWallet({}), TypeError);
   assert.throws(() => parseLnbitsWallet({ balance: 'abc' }), TypeError);
   assert.throws(() => parseLnbitsWallet(null), TypeError);
+});
+
+// ---- parseBlinkWallets ----
+
+function blinkResponse(wallets) {
+  return { data: { me: { defaultAccount: { wallets } } } };
+}
+
+test('parseBlinkWallets: BTC 지갑 잔액(sats)을 그대로 돌려준다', () => {
+  const r = blinkResponse([
+    { id: 'w1', walletCurrency: 'USD', balance: 1234 },
+    { id: 'w2', walletCurrency: 'BTC', balance: 550 },
+  ]);
+  assert.equal(parseBlinkWallets(r), 550);
+});
+
+test('parseBlinkWallets: BTC 지갑이 없거나 응답 형태가 다르면 TypeError', () => {
+  assert.throws(() => parseBlinkWallets(blinkResponse([{ walletCurrency: 'USD', balance: 1 }])), TypeError);
+  assert.throws(() => parseBlinkWallets({}), TypeError);
+  assert.throws(() => parseBlinkWallets(null), TypeError);
+  assert.throws(
+    () => parseBlinkWallets(blinkResponse([{ walletCurrency: 'BTC', balance: 'x' }])),
+    TypeError
+  );
 });
 
 // ---- logFileName ----
