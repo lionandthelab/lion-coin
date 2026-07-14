@@ -6,5 +6,11 @@
   "scripts": {
     "test": "node --test",
     "check-goal": "node --env-file-if-exists=.env scripts/check-goal.js"
+  },
+  "dependencies": {
+    "bip32": "^4.0.0",
+    "bip39": "^3.1.0",
+    "bitcoinjs-lib": "^7.0.1",
+    "tiny-secp256k1": "^2.2.4"
   }
 }
