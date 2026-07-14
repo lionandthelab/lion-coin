@@ -7,9 +7,24 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
-const { evaluateGoal, parseLnbitsWallet } = require('../harness/lib/core');
+const { evaluateGoal, parseLnbitsWallet, parseBlinkWallets } = require('../harness/lib/core');
 
 const STATE_PATH = path.join(__dirname, '..', 'harness', 'state.json');
+const BLINK_ENDPOINT = process.env.BLINK_ENDPOINT || 'https://api.blink.sv/graphql';
+
+async function fetchBlinkBalanceSats(apiKey) {
+  const res = await fetch(BLINK_ENDPOINT, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-API-KEY': apiKey },
+    body: JSON.stringify({
+      query: 'query Me { me { defaultAccount { wallets { id walletCurrency balance } } } }',
+    }),
+  });
+  if (!res.ok) {
+    throw new Error(`Blink 응답 오류: HTTP ${res.status}`);
+  }
+  return parseBlinkWallets(await res.json());
+}
 
 async function fetchLnbitsBalanceSats(url, key) {
   const res = await fetch(`${url.replace(/\/+$/, '')}/api/v1/wallet`, {
@@ -23,12 +38,12 @@ async function fetchLnbitsBalanceSats(url, key) {
 
 async function main() {
   const state = JSON.parse(fs.readFileSync(STATE_PATH, 'utf8'));
-  const url = process.env.LNBITS_URL;
-  const key = process.env.LNBITS_READ_KEY;
 
   let balanceSats = null;
-  if (url && key) {
-    balanceSats = await fetchLnbitsBalanceSats(url, key);
+  if (process.env.BLINK_API_KEY) {
+    balanceSats = await fetchBlinkBalanceSats(process.env.BLINK_API_KEY);
+  } else if (process.env.LNBITS_URL && process.env.LNBITS_READ_KEY) {
+    balanceSats = await fetchLnbitsBalanceSats(process.env.LNBITS_URL, process.env.LNBITS_READ_KEY);
   }
 
   const result = evaluateGoal(state.goal, balanceSats);

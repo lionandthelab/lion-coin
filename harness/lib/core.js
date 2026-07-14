@@ -44,6 +44,19 @@ function parseLnbitsWallet(json) {
   return Math.floor(json.balance / 1000);
 }
 
+// Blink GraphQL me 쿼리 응답에서 BTC 지갑 잔액을 꺼낸다. Blink는 sat 단위다.
+function parseBlinkWallets(json) {
+  const wallets = json?.data?.me?.defaultAccount?.wallets;
+  if (!Array.isArray(wallets)) {
+    throw new TypeError('Blink 응답에 defaultAccount.wallets 배열이 없습니다');
+  }
+  const btc = wallets.find((w) => w && w.walletCurrency === 'BTC');
+  if (!btc || typeof btc.balance !== 'number' || Number.isNaN(btc.balance)) {
+    throw new TypeError('Blink 응답에 숫자 balance를 가진 BTC 지갑이 없습니다');
+  }
+  return btc.balance;
+}
+
 function logFileName(date = new Date()) {
   const kst = new Intl.DateTimeFormat('sv-SE', {
     timeZone: 'Asia/Seoul',
@@ -54,4 +67,4 @@ function logFileName(date = new Date()) {
   return `${kst}.md`;
 }
 
-module.exports = { pickNextTask, evaluateGoal, parseLnbitsWallet, logFileName };
+module.exports = { pickNextTask, evaluateGoal, parseLnbitsWallet, parseBlinkWallets, logFileName };
