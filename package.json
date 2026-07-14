@@ -4,7 +4,7 @@
   "private": true,
   "description": "Satoshi Zero-to-One — 첫 사토시 획득 프로젝트 자율 하네스",
   "scripts": {
-    "test": "node --test tests/",
+    "test": "node --test",
     "check-goal": "node --env-file-if-exists=.env scripts/check-goal.js"
   }
 }
