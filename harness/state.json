@@ -1,0 +1,169 @@
+{
+  "project": "satoshi-zero-to-one",
+  "created_at": "2026-07-14",
+  "iteration": 0,
+  "goal": {
+    "description": "라이트닝으로 첫 1,000원어치(약 600 sats) 실수령",
+    "target_sats": 600,
+    "baseline_sats": 0,
+    "achieved": false,
+    "achieved_at": null,
+    "last_checked_at": null,
+    "last_balance_sats": null
+  },
+  "tasks": [
+    {
+      "id": "A1",
+      "track": "A",
+      "title": "BIP84 지갑 파생 모듈 (니모닉 → tb1 주소, wallet.js)",
+      "status": "pending",
+      "requires_human": false,
+      "depends_on": [],
+      "notes": "BIP84 공식 테스트 벡터로 검증. 테스트넷 전용."
+    },
+    {
+      "id": "A2",
+      "track": "A",
+      "title": "Esplora API로 테스트넷 UTXO·잔액 조회 모듈 (balance.js)",
+      "status": "pending",
+      "requires_human": false,
+      "depends_on": ["A1"],
+      "notes": "mempool.space testnet4 또는 Blockstream signet API. fetch 래퍼는 얇게, 파서는 TDD."
+    },
+    {
+      "id": "A4",
+      "track": "A",
+      "title": "수수료 추정 모듈 (fees.js, sat/vB)",
+      "status": "pending",
+      "requires_human": false,
+      "depends_on": [],
+      "notes": "Esplora fee-estimates 응답 파싱. 파서 TDD."
+    },
+    {
+      "id": "A7",
+      "track": "A",
+      "title": "니모닉·개인키 보안 원칙 문서화 (docs/SECURITY.md)",
+      "status": "pending",
+      "requires_human": false,
+      "depends_on": [],
+      "notes": "종이 백업, 코드·클라우드 저장 금지, 학습 코드로 실자산 관리 금지."
+    },
+    {
+      "id": "C1",
+      "track": "C",
+      "title": "벤치마킹 리포트: sats로 팔리는 디지털 상품 5개 조사 (docs/benchmark.md)",
+      "status": "pending",
+      "requires_human": false,
+      "depends_on": [],
+      "notes": "가격(sats)·결제방식·전달방식·페이지 구성·판매 신호를 표로. WebSearch 활용."
+    },
+    {
+      "id": "C4",
+      "track": "C",
+      "title": "Stacker News 연재 1편 초안 (영문): Building a Bitcoin Wallet from Scratch",
+      "status": "pending",
+      "requires_human": false,
+      "depends_on": ["A1"],
+      "notes": "트랙 A 코드를 소재로. drafts/ 폴더에 저장."
+    },
+    {
+      "id": "B1",
+      "track": "B",
+      "title": "라이트닝 지갑 개설 (LNbits 계정 또는 Blink 앱)",
+      "status": "pending",
+      "requires_human": true,
+      "depends_on": [],
+      "notes": "사람 작업: 계정 생성. 커스터디얼은 소액 한정."
+    },
+    {
+      "id": "B2",
+      "track": "B",
+      "title": ".env에 LNBITS_URL / LNBITS_READ_KEY 설정",
+      "status": "pending",
+      "requires_human": true,
+      "depends_on": ["B1"],
+      "notes": "사람 작업: .env.example 참고. 이것이 완료되면 목표 판정이 자동화된다."
+    },
+    {
+      "id": "B3",
+      "track": "B",
+      "title": "목표 체크 파이프라인 실검증 (소액 자가 인보이스 결제 테스트)",
+      "status": "pending",
+      "requires_human": false,
+      "depends_on": ["B2"],
+      "notes": "자가 입금분은 goal.baseline_sats에 기록해 목표 수령액에서 제외."
+    },
+    {
+      "id": "A3",
+      "track": "A",
+      "title": "signet/testnet faucet에서 테스트 코인 수령",
+      "status": "pending",
+      "requires_human": true,
+      "depends_on": ["A1"],
+      "notes": "사람 작업: faucet은 캡차가 있음. 에이전트가 주소를 만들어 로그에 안내."
+    },
+    {
+      "id": "A5",
+      "track": "A",
+      "title": "PSBT 구성·서명·브로드캐스트 (send.js) — 자기 주소로 첫 전송",
+      "status": "pending",
+      "requires_human": false,
+      "depends_on": ["A2", "A3", "A4"],
+      "notes": "익스플로러에서 확인 가능한 txid를 로그에 기록."
+    },
+    {
+      "id": "A6",
+      "track": "A",
+      "title": "CLI 통합 (create | address | balance | send)",
+      "status": "pending",
+      "requires_human": false,
+      "depends_on": ["A1", "A2", "A5"],
+      "notes": ""
+    },
+    {
+      "id": "C2",
+      "track": "C",
+      "title": "1호 상품 제작: 'Bitcoin Wallet from Scratch' 미니 가이드 (영문)",
+      "status": "pending",
+      "requires_human": false,
+      "depends_on": ["A5", "C1"],
+      "notes": "트랙 A 산출물을 그대로 상품화. products/ 폴더."
+    },
+    {
+      "id": "B4",
+      "track": "B",
+      "title": "라이트닝 결제 페이지 (LNURL-pay 링크 + 정적 페이지)",
+      "status": "pending",
+      "requires_human": false,
+      "depends_on": ["B1"],
+      "notes": "LNbits Pay Link 확장 사용. 정적 페이지는 site/ 폴더."
+    },
+    {
+      "id": "B5",
+      "track": "B",
+      "title": "결제 후 상품 전달 흐름 구성",
+      "status": "pending",
+      "requires_human": false,
+      "depends_on": ["B4", "C2"],
+      "notes": "webhook 또는 결제 확인 후 다운로드 링크."
+    },
+    {
+      "id": "C3",
+      "track": "C",
+      "title": "Stacker News 계정 개설",
+      "status": "pending",
+      "requires_human": true,
+      "depends_on": [],
+      "notes": "사람 작업: 라이트닝 로그인이므로 B1 지갑으로 로그인 가능."
+    },
+    {
+      "id": "C5",
+      "track": "C",
+      "title": "연재 게시 + 판매 링크 공유 (Stacker News)",
+      "status": "pending",
+      "requires_human": true,
+      "depends_on": ["C4", "C3", "B4"],
+      "notes": "사람 작업: 게시는 사람이. 초안·링크는 에이전트가 준비."
+    }
+  ]
+}
