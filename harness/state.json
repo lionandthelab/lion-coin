@@ -1,7 +1,7 @@
 {
   "project": "satoshi-zero-to-one",
   "created_at": "2026-07-14",
-  "iteration": 0,
+  "iteration": 2,
   "goal": {
     "description": "라이트닝으로 첫 1,000원어치(약 600 sats) 실수령",
     "target_sats": 600,
@@ -28,7 +28,7 @@
       "status": "pending",
       "requires_human": false,
       "depends_on": ["A1"],
-      "notes": "mempool.space testnet4 또는 Blockstream signet API. fetch 래퍼는 얇게, 파서는 TDD."
+      "notes": "mempool.space testnet4 또는 Blockstream signet API. fetch 래퍼는 얇게, 파서는 TDD. 회차 2(2026-07-16)에서 pickNextTask가 선택했으나 npm test 실행 승인이 세션에서 막혀 TDD 진행 불가 — 환경 이슈, logs/2026-07-16.md 참고."
     },
     {
       "id": "A4",
@@ -43,10 +43,10 @@
       "id": "A7",
       "track": "A",
       "title": "니모닉·개인키 보안 원칙 문서화 (docs/SECURITY.md)",
-      "status": "pending",
+      "status": "done",
       "requires_human": false,
       "depends_on": [],
-      "notes": "종이 백업, 코드·클라우드 저장 금지, 학습 코드로 실자산 관리 금지."
+      "notes": "회차 1 완료. docs/SECURITY.md 작성 — 핵심 원칙, 저장소 기술적 강제 장치, 니모닉 취급 절차, 노출 사고 대응, 커밋 전 체크리스트."
     },
     {
       "id": "C1",
@@ -61,10 +61,10 @@
       "id": "C4",
       "track": "C",
       "title": "Stacker News 연재 1편 초안 (영문): Building a Bitcoin Wallet from Scratch",
-      "status": "pending",
+      "status": "done",
       "requires_human": false,
       "depends_on": ["A1"],
-      "notes": "트랙 A 코드를 소재로. drafts/ 폴더에 저장."
+      "notes": "회차 1 완료. drafts/01-building-a-bitcoin-wallet-from-scratch.md — wallet.js·BIP84 테스트 벡터 소재. 게시(C5)는 C3(계정 개설) 이후 사람이 진행."
     },
     {
       "id": "B1",
