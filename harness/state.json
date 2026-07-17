@@ -82,7 +82,7 @@
       "status": "pending",
       "requires_human": true,
       "depends_on": ["B1"],
-      "notes": "사람 작업: .env.example 참고. 이것이 완료되면 목표 판정이 자동화된다."
+      "notes": "2026-07-17: 키 입력됐으나 401 — ak_v2_ 접두사로 다른 서비스 키로 보임. blink_ 형식으로 재발급 필요 (ACTION_REQUIRED.md 참고). npm run check-goal이 configured:true면 완료."
     },
     {
       "id": "B3",
