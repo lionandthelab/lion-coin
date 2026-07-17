@@ -1,7 +1,7 @@
 {
   "project": "satoshi-zero-to-one",
   "created_at": "2026-07-14",
-  "iteration": 2,
+  "iteration": 3,
   "goal": {
     "description": "라이트닝으로 첫 1,000원어치(약 600 sats) 실수령",
     "target_sats": 600,
@@ -25,10 +25,10 @@
       "id": "A2",
       "track": "A",
       "title": "Esplora API로 테스트넷 UTXO·잔액 조회 모듈 (balance.js)",
-      "status": "pending",
+      "status": "done",
       "requires_human": false,
       "depends_on": ["A1"],
-      "notes": "mempool.space testnet4 또는 Blockstream signet API. fetch 래퍼는 얇게, 파서는 TDD. 회차 2(2026-07-16)에서 pickNextTask가 선택했으나 npm test 실행 승인이 세션에서 막혀 TDD 진행 불가 — 환경 이슈, logs/2026-07-16.md 참고."
+      "notes": "회차 3 완료. src/balance.js — mempool.space testnet Esplora API. parseUtxos/sumSats는 TDD(테스트 7개), fetchUtxos/fetchBalanceSats는 fetch 래퍼로 얇게 유지(check-goal.js 패턴과 동일, 네트워크 호출은 단위테스트 대상 아님)."
     },
     {
       "id": "A4",
