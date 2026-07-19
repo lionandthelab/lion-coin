@@ -1,7 +1,7 @@
 {
   "project": "satoshi-zero-to-one",
   "created_at": "2026-07-14",
-  "iteration": 3,
+  "iteration": 4,
   "goal": {
     "description": "라이트닝으로 첫 1,000원어치(약 600 sats) 실수령",
     "target_sats": 600,
@@ -34,10 +34,10 @@
       "id": "A4",
       "track": "A",
       "title": "수수료 추정 모듈 (fees.js, sat/vB)",
-      "status": "pending",
+      "status": "done",
       "requires_human": false,
       "depends_on": [],
-      "notes": "Esplora fee-estimates 응답 파싱. 파서 TDD."
+      "notes": "회차 4 완료. src/fees.js — Esplora fee-estimates 파싱(parseFeeEstimates)과 목표 확인블록수에 맞는 요율 선택(feeForTarget)을 TDD(테스트 9개). fetchFeeEstimates는 balance.js와 동일하게 얇은 fetch 래퍼(미검증, 네트워크 호출은 단위테스트 대상 아님)."
     },
     {
       "id": "A7",
