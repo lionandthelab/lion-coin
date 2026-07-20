@@ -17,7 +17,7 @@
 ## C3 — Stacker News 계정 개설 (B1 후 권장)
 - **왜:** 연재 게시(C5) + tips 수령 채널. 라이트닝 지갑으로 로그인하므로 B1이 먼저입니다.
 - **방법:** [stacker.news](https://stacker.news) → 라이트닝 로그인.
-- **참고:** 연재 1편 영문 초안이 이미 준비돼 있습니다 — `drafts/01-building-a-bitcoin-wallet-from-scratch.md`. 계정 개설 후 검토·게시만 하면 됩니다.
+- **참고:** 연재 1편 영문 초안이 이미 준비돼 있습니다 — `drafts/01-building-a-bitcoin-wallet-from-scratch.md`. 계정 개설 후 검토·게시만 하면 됩니다. 회차 5에서 `docs/benchmark.md`(벤치마킹 리포트)도 준비됐으니, 게시 후 판매 신호(zap 유도)를 참고하세요.
 
 ## A3 — 테스트넷 faucet 코인 수령 (지금 가능)
 - **왜:** 트랙 A 학습용 전송 실습(A5 PSBT 서명·전송)에 필요. 실자산 아님.

@@ -1,7 +1,7 @@
 {
   "project": "satoshi-zero-to-one",
   "created_at": "2026-07-14",
-  "iteration": 4,
+  "iteration": 5,
   "goal": {
     "description": "라이트닝으로 첫 1,000원어치(약 600 sats) 실수령",
     "target_sats": 600,
@@ -52,10 +52,10 @@
       "id": "C1",
       "track": "C",
       "title": "벤치마킹 리포트: sats로 팔리는 디지털 상품 5개 조사 (docs/benchmark.md)",
-      "status": "pending",
+      "status": "done",
       "requires_human": false,
       "depends_on": [],
-      "notes": "가격(sats)·결제방식·전달방식·페이지 구성·판매 신호를 표로. WebSearch 활용."
+      "notes": "회차 5 완료. docs/benchmark.md — Stacker News/Plebeian Market/LNbits LNURLp/Fountain(V4V)/SatShoot 5개 비교. 가격은 대부분 고정가 또는 zap 자유가, 전달은 LNURLp Success Action 같은 자동화가 마찰이 적음. C2 가격(1,000 sats)은 그대로 유지, B4 결제 페이지는 자동 전달을 우선 목표로."
     },
     {
       "id": "C4",
