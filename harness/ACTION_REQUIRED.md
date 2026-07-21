@@ -6,11 +6,12 @@
 
 ## B1 — Blink 지갑 개설 확인 (지금 가능, ⚠ 재확인 필요) ★확정: Blink로 진행
 - **왜:** 실제 sats를 수령할 계좌. 이것 없이는 목표 판정 자체가 불가능합니다.
-- **현재 상태:** `.env`에 API 키가 입력돼 있지만 `npm run check-goal`이 계속 **401**을 반환합니다. 키가 `ak_v2_` 접두사(79자)인데 Blink 지갑 키는 `blink_`로 시작해야 합니다([공식 문서](https://dev.blink.sv/api/auth)) — **다른 서비스의 키가 잘못 들어갔을 가능성**이 있습니다. 즉 B1(Blink 가입) 자체가 실제로 완료됐는지부터 확인이 필요합니다.
-- **방법:**
+- **현재 상태 (2026-07-21 재확인):** `.env`의 키가 여전히 `ak_v2_` 접두사(79자)입니다 — 2026-07-17에 지적된 것과 동일한 값으로, 아직 교체되지 않았습니다. [공식 문서](https://dev.blink.sv/api/auth)를 다시 확인한 결과 Blink 키 형식은 지금도 `blink_...`가 맞습니다. 즉 여전히 다른 서비스의 키가 들어가 있는 상태입니다.
+- **방법 (공식 문서 기준 정확한 경로):**
   1. App Store에서 **Blink** 앱이 설치·가입돼 있는지 확인 (전화번호로 가입 → BTC 지갑 자동 생성, 라이트닝 주소 `xxx@blink.sv`도 함께 생성됨). 아직이라면 지금 가입하세요.
-  2. 가입 확인되면 [dashboard.blink.sv](https://dashboard.blink.sv)에 **그 Blink 계정으로** 로그인 → API Keys → **Read 스코프** 키 발급 (`blink_...` 형식인지 반드시 확인).
-  3. `.env`의 `BLINK_API_KEY` 값을 새 키로 교체.
+  2. 가입 확인되면 [dashboard.blink.sv](https://dashboard.blink.sv)에 **그 Blink 계정으로** 로그인 → 좌측 메뉴 **"API Keys"** → **`+`** 버튼으로 새 키 생성.
+  3. 스코프 선택: **Read**(잔액·거래내역 조회 — B2/체크스크립트에 필수)에 더해 **Receive**(인보이스 생성·온체인 주소 발급 — 나중에 B4 결제 페이지에서 필요)까지 함께 체크해서 발급하면, B4 착수 시 키를 다시 만들 필요가 없습니다. **Write는 선택하지 마세요** (공식 문서도 제3자 서버에서의 Write 스코프 사용을 권장하지 않음).
+  4. 발급된 키가 `blink_`로 시작하는지 반드시 확인한 뒤 `.env`의 `BLINK_API_KEY` 값을 교체.
 - **주의:** 커스터디얼이므로 소액만. "not your keys, not your coins." (`docs/SECURITY.md` 참고)
 - **확인:** `npm run check-goal`이 `configured:true`를 출력하면 성공 (B1·B2 모두 완료로 간주).
 

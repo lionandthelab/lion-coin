@@ -1,7 +1,7 @@
 {
   "project": "satoshi-zero-to-one",
   "created_at": "2026-07-14",
-  "iteration": 5,
+  "iteration": 6,
   "goal": {
     "description": "라이트닝으로 첫 1,000원어치(약 600 sats) 실수령",
     "target_sats": 600,
@@ -82,7 +82,7 @@
       "status": "pending",
       "requires_human": true,
       "depends_on": ["B1"],
-      "notes": "2026-07-17: 키 입력됐으나 401 — ak_v2_ 접두사로 다른 서비스 키로 보임. blink_ 형식으로 재발급 필요 (ACTION_REQUIRED.md 참고). npm run check-goal이 configured:true면 완료."
+      "notes": "2026-07-17: 키 입력됐으나 401 — ak_v2_ 접두사로 다른 서비스 키로 보임. 2026-07-21: 재확인 결과 여전히 동일한 ak_v2_ 키(79자), 미교체. Blink 공식 문서(dev.blink.sv/api/auth) 재확인해 blink_ 접두사가 맞음을 재확인, ACTION_REQUIRED.md에 정확한 발급 경로(좌측 메뉴 API Keys → + → Read+Receive 스코프)로 갱신. npm run check-goal이 configured:true면 완료."
     },
     {
       "id": "B3",
