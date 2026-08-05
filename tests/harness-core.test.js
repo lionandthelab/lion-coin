@@ -6,6 +6,7 @@ const {
   evaluateGoal,
   parseLnbitsWallet,
   parseBlinkWallets,
+  validateBlinkKeyFormat,
   logFileName,
 } = require('../harness/lib/core');
 
@@ -143,6 +144,32 @@ test('parseBlinkWallets: BTC 지갑이 없거나 응답 형태가 다르면 Type
     () => parseBlinkWallets(blinkResponse([{ walletCurrency: 'BTC', balance: 'x' }])),
     TypeError
   );
+});
+
+// ---- validateBlinkKeyFormat ----
+
+test('validateBlinkKeyFormat: blink_ 접두사면 valid', () => {
+  const r = validateBlinkKeyFormat('blink_abcdefgh12345');
+  assert.equal(r.valid, true);
+});
+
+test('validateBlinkKeyFormat: 비어있거나 문자열이 아니면 invalid', () => {
+  assert.equal(validateBlinkKeyFormat('').valid, false);
+  assert.equal(validateBlinkKeyFormat(undefined).valid, false);
+  assert.equal(validateBlinkKeyFormat(null).valid, false);
+});
+
+test('validateBlinkKeyFormat: blink_이 아닌 접두사(다른 서비스 키)면 invalid, 발견한 접두사를 알려준다', () => {
+  const r = validateBlinkKeyFormat('ak_v2_Yabcdefgh12345');
+  assert.equal(r.valid, false);
+  assert.match(r.reason, /ak_v2_/);
+  assert.match(r.reason, /blink_/);
+});
+
+test('validateBlinkKeyFormat: 앞뒤 공백이 섞여 있으면 invalid (복붙 실수 감지)', () => {
+  const r = validateBlinkKeyFormat(' blink_abcdefgh12345\n');
+  assert.equal(r.valid, false);
+  assert.match(r.reason, /공백/);
 });
 
 // ---- logFileName ----
