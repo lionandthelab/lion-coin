@@ -57,6 +57,25 @@ function parseBlinkWallets(json) {
   return btc.balance;
 }
 
+// Blink API 키 형식을 오프라인으로 점검한다(네트워크 호출 없이 흔한 복붙 실수를 즉시 잡기 위함).
+function validateBlinkKeyFormat(key) {
+  if (typeof key !== 'string' || key.length === 0) {
+    return { valid: false, reason: 'BLINK_API_KEY가 비어 있습니다.' };
+  }
+  if (key !== key.trim()) {
+    return { valid: false, reason: 'BLINK_API_KEY 앞뒤에 공백/줄바꿈이 섞여 있습니다. 복붙 시 딸려온 공백을 제거하세요.' };
+  }
+  if (!key.startsWith('blink_')) {
+    const parts = key.split('_');
+    const found = parts.length > 2 ? `${parts[0]}_${parts[1]}_` : `${parts[0]}_`;
+    return {
+      valid: false,
+      reason: `Blink 키는 "blink_"로 시작해야 하는데 "${found}" 접두사가 발견됐습니다. dashboard.blink.sv → API Keys에서 발급한 키가 맞는지 확인하세요 (다른 서비스 키가 잘못 들어갔을 수 있습니다).`,
+    };
+  }
+  return { valid: true };
+}
+
 function logFileName(date = new Date()) {
   const kst = new Intl.DateTimeFormat('sv-SE', {
     timeZone: 'Asia/Seoul',
@@ -67,4 +86,11 @@ function logFileName(date = new Date()) {
   return `${kst}.md`;
 }
 
-module.exports = { pickNextTask, evaluateGoal, parseLnbitsWallet, parseBlinkWallets, logFileName };
+module.exports = {
+  pickNextTask,
+  evaluateGoal,
+  parseLnbitsWallet,
+  parseBlinkWallets,
+  validateBlinkKeyFormat,
+  logFileName,
+};

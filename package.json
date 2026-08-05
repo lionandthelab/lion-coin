@@ -5,7 +5,8 @@
   "description": "Satoshi Zero-to-One — 첫 사토시 획득 프로젝트 자율 하네스",
   "scripts": {
     "test": "node --test",
-    "check-goal": "node --env-file-if-exists=.env scripts/check-goal.js"
+    "check-goal": "node --env-file-if-exists=.env scripts/check-goal.js",
+    "verify-blink-key": "node --env-file-if-exists=.env scripts/verify-blink-key.js"
   },
   "dependencies": {
     "bip32": "^4.0.0",
