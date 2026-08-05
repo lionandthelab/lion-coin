@@ -15,6 +15,7 @@
   3. 스코프 선택: **Read**(잔액·거래내역 조회 — B2/체크스크립트에 필수)에 더해 **Receive**(인보이스 생성·온체인 주소 발급 — 나중에 B4 결제 페이지에서 필요)까지 함께 체크해서 발급하면, B4 착수 시 키를 다시 만들 필요가 없습니다. **Write는 선택하지 마세요** (공식 문서도 제3자 서버에서의 Write 스코프 사용을 권장하지 않음).
   4. 발급된 키가 `blink_`로 시작하는지 반드시 확인한 뒤 `.env`의 `BLINK_API_KEY` 값을 교체.
 - **주의:** 커스터디얼이므로 소액만. "not your keys, not your coins." (`docs/SECURITY.md` 참고)
+- **빠른 자가 점검 (2026-08-05 추가):** `.env` 교체 직후 `npm run check-goal`의 401을 기다리지 않고 `npm run verify-blink-key`로 먼저 형식만 즉시 확인할 수 있습니다 (네트워크 호출 없음). `blink_`로 시작하지 않으면 바로 알려줍니다.
 - **확인:** `npm run check-goal`이 `configured:true`를 출력하면 성공 (B1·B2 모두 완료로 간주).
 
 ## C3 — Stacker News 계정 개설 (B1 후 권장)
