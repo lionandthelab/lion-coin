@@ -18,10 +18,16 @@
 - **빠른 자가 점검 (2026-08-05 추가):** `.env` 교체 직후 `npm run check-goal`의 401을 기다리지 않고 `npm run verify-blink-key`로 먼저 형식만 즉시 확인할 수 있습니다 (네트워크 호출 없음). `blink_`로 시작하지 않으면 바로 알려줍니다.
 - **확인:** `npm run check-goal`이 `configured:true`를 출력하면 성공 (B1·B2 모두 완료로 간주).
 
-## C3 — Stacker News 계정 개설 (B1 후 권장)
-- **왜:** 연재 게시(C5) + tips 수령 채널. 라이트닝 지갑으로 로그인하므로 B1이 먼저입니다.
-- **방법:** [stacker.news](https://stacker.news) → 라이트닝 로그인.
+## C3 — Stacker News 계정 개설 (지금 바로 가능 — B1을 기다릴 필요 없음)
+- **왜:** 연재 게시(C5) + tips 수령 채널.
+- **방법 (2026-08-10 갱신):** [stacker.news](https://stacker.news)는 라이트닝 로그인 외에 **Nostr 로그인**(브라우저 확장 기반)도 지원합니다. B1(Blink) 완료 전이라도 아래 경로로 계정을 먼저 만들 수 있습니다:
+  1. [Alby 브라우저 확장](https://getalby.com/products/browser-extension) 설치.
+  2. Alby 설정에서 "Create Master Key"로 새 Nostr 키 생성 (또는 기존 키가 있으면 가져오기).
+  3. stacker.news 접속 → 로그인에서 Nostr 옵션 선택 → Alby가 뜨면 승인.
+  4. 나중에 B1(Blink) 완료 후 Settings → "Link Lightning"에서 라이트닝 지갑을 계정에 연결하면 zap 수령이 가능해집니다.
+  - (이메일 로그인도 지원되는 것으로 보이나 세부 절차는 미확인 — Nostr 경로가 더 확실합니다.)
 - **참고:** 연재 1편 영문 초안이 이미 준비돼 있습니다 — `drafts/01-building-a-bitcoin-wallet-from-scratch.md`. 계정 개설 후 검토·게시만 하면 됩니다. 회차 5에서 `docs/benchmark.md`(벤치마킹 리포트)도 준비됐으니, 게시 후 판매 신호(zap 유도)를 참고하세요.
+- **주의:** 게시물에 zap을 받으려면 결국 라이트닝 지갑 연결(B1)이 필요합니다 — Nostr 로그인은 계정 개설·활동(게시·댓글)만 먼저 시작하게 해줄 뿐, C5의 최종 목표(수령)를 대체하지 않습니다.
 
 ## A3 — 테스트넷 faucet 코인 수령 (지금 가능)
 - **왜:** 트랙 A 학습용 전송 실습(A5 PSBT 서명·전송)에 필요. 실자산 아님.
