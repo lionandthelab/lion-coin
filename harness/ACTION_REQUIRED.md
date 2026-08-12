@@ -39,4 +39,7 @@
   2. testnet4 faucet(예: mempool.space/testnet4/faucet)에서 캡차 풀고 위 `tb1q...` 주소로 전송.
      - **백업 (2026-08-11 확인):** mempool.space faucet 페이지는 자바스크립트로 렌더링돼 자동 점검 도구로는 내용 확인이 안 됩니다 — 만약 막히거나 캡차가 안 풀리면 **[coinfaucet.eu/en/btc-testnet4](https://coinfaucet.eu/en/btc-testnet4/)** 를 대안으로 쓰세요. hCaptcha 기반, `tb1q...` bech32 주소를 그대로 받고, 2016년부터 운영 중인 오래된 서비스입니다(누적 지급 이력 확인됨).
   3. 완료되면 니모닉을 `.env`가 아닌 **종이에만** 보관하고, `harness/state.json`의 A3 `notes`에 주소만 적어주세요.
-  4. 잔액 확인은 이제 `src/balance.js`(회차 3에서 완성)로 가능합니다: `node -e "require('./src/balance').fetchBalanceSats('tb1q...').then(s=>console.log(s+' sats'))"` (mempool.space testnet3 기준 — testnet4 faucet을 쓰면 `{ baseUrl: '...' }` 옵션으로 맞는 Esplora 엔드포인트를 지정해야 합니다).
+  4. 잔액 확인은 이제 `src/balance.js`(회차 3에서 완성)로 가능합니다: `node -e "require('./src/balance').fetchBalanceSats('tb1q...').then(s=>console.log(s+' sats'))"` (기본값은 mempool.space testnet3). **testnet4 faucet(coinfaucet.eu 등)을 썼다면** testnet3 API로는 잔액이 0으로 나옵니다 — 아래처럼 `baseUrl` 옵션으로 testnet4 Esplora 엔드포인트를 지정하세요 (2026-08-12 회차14에서 실제 응답 확인됨):
+     ```bash
+     node -e "require('./src/balance').fetchBalanceSats('tb1q...', { baseUrl: 'https://mempool.space/testnet4/api' }).then(s=>console.log(s+' sats'))"
+     ```
