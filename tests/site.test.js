@@ -119,6 +119,19 @@ test('renderPage: 히어로 수치·미터·상태 라벨이 포함된 완결 HT
   assert.match(html, /사람 작업/);
 });
 
+test('renderPage: 확장 트랙(D/E/F)도 이름이 붙은 타일로 표시된다', () => {
+  const s = fixtureState();
+  s.tasks.push(
+    { id: 'D1', track: 'D', title: '랩', status: 'pending', requires_human: false, depends_on: [], notes: '' },
+    { id: 'E1', track: 'E', title: '페이퍼', status: 'pending', requires_human: false, depends_on: [], notes: '' },
+    { id: 'F1', track: 'F', title: '사스', status: 'pending', requires_human: false, depends_on: [], notes: '' }
+  );
+  const html = renderPage(buildSiteModel(s, []), '2026-08-15T12:00:00Z');
+  assert.match(html, /트랙 D — 전략 랩/);
+  assert.match(html, /트랙 E — 페이퍼·실거래/);
+  assert.match(html, /트랙 F — 랩 SaaS/);
+});
+
 test('renderPage: 작업 제목의 HTML은 이스케이프된다', () => {
   const s = fixtureState();
   s.tasks[0].title = '<img onerror=x>';

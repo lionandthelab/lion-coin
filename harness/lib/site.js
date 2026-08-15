@@ -131,7 +131,14 @@ function buildSiteModel(state, logFiles) {
   };
 }
 
-const TRACK_NAMES = { A: '트랙 A — 지갑 개발 학습', B: '트랙 B — 라이트닝 수익', C: '트랙 C — 상품·콘텐츠' };
+const TRACK_NAMES = {
+  A: '트랙 A — 지갑 개발 학습',
+  B: '트랙 B — 라이트닝 수익',
+  C: '트랙 C — 상품·콘텐츠',
+  D: '트랙 D — 전략 랩',
+  E: '트랙 E — 페이퍼·실거래',
+  F: '트랙 F — 랩 SaaS',
+};
 
 function statusBadge(t) {
   if (t.status === 'done') return '<span class="badge done">✓ 완료</span>';
