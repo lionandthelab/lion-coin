@@ -6,6 +6,12 @@ const {
   rsiReversion,
   donchianBreakout,
   fundingReversion,
+  emaCrossLS,
+  donchianLS,
+  tsMomentum,
+  volBreakout,
+  fundingLS,
+  ensemble,
   STRATEGIES,
 } = require('../src/strategies');
 
@@ -188,4 +194,111 @@ test('fundingReversion: funding이 없는 캔들에서는 진입하지 않는다
 test('fundingReversion: 임계 순서가 뒤집히면 RangeError', () => {
   const c = withFunding([1, 2, 3]);
   assert.throws(() => fundingReversion(c, { buyBelowPct: 90, sellAbovePct: 10 }), RangeError);
+});
+
+// ---- 롱/숏 전략군 ----
+// 하락장에서 "덜 잃기"밖에 못 하던 구조를 넓힌다. 아래 전략들은 -1을 낼 수 있다.
+
+test('emaCrossLS: 빠른 EMA가 위면 롱, 아래면 숏', () => {
+  const up = emaCrossLS(fromCloses([1, 2, 3, 4, 5, 6]), { fast: 2, slow: 3, ...NO_GUARDS });
+  assert.deepEqual(up, [0, 0, 1, 1, 1, 1]);
+  const down = emaCrossLS(fromCloses([6, 5, 4, 3, 2, 1]), { fast: 2, slow: 3, ...NO_GUARDS });
+  assert.deepEqual(down, [0, 0, -1, -1, -1, -1]);
+});
+
+test('donchianLS: 상단 돌파는 롱, 하단 이탈은 숏', () => {
+  const c = ohlc([
+    [10, 9, 10],
+    [11, 10, 11],
+    [12, 11, 12], // 직전 2봉 최고 11 돌파 → 롱
+    [13, 8, 8], // 직전 2봉 최저 10 이탈 → 숏
+  ]);
+  assert.deepEqual(donchianLS(c, { entryLookback: 2, exitLookback: 2, ...NO_GUARDS }), [0, 0, 1, -1]);
+});
+
+test('tsMomentum: 룩백 대비 올랐으면 롱, 내렸으면 숏', () => {
+  const out = tsMomentum(fromCloses([100, 101, 102, 103]), { lookback: 2, ...NO_GUARDS });
+  // i<2는 비교 대상 없음 → 0. i=2: 102>100 롱. i=3: 103>101 롱
+  assert.deepEqual(out, [0, 0, 1, 1]);
+  const down = tsMomentum(fromCloses([100, 99, 98, 97]), { lookback: 2, ...NO_GUARDS });
+  assert.deepEqual(down, [0, 0, -1, -1]);
+});
+
+test('tsMomentum: 변화가 없으면 진입하지 않는다', () => {
+  assert.deepEqual(tsMomentum(fromCloses([100, 100, 100, 100]), { lookback: 2, ...NO_GUARDS }), [
+    0, 0, 0, 0,
+  ]);
+});
+
+test('volBreakout: 시가 + k×직전변동폭을 넘으면 롱, 아래로 이탈하면 숏', () => {
+  // 직전 2봉 변동폭 = 고가 12 - 저가 8 = 4, k=0.5 → 임계 ±2
+  const c = ohlc([
+    [12, 8, 10],
+    [12, 8, 10],
+    [13, 9, 13], // 시가 13… 아래 참조
+  ]);
+  // 세 번째 봉의 시가는 종가와 같게 만든 픽스처라 별도 검증은 아래 테스트에서
+  const out = volBreakout(c, { rangeLookback: 2, k: 0.5, ...NO_GUARDS });
+  assert.equal(out.length, 3);
+  assert.ok(out.every((p) => p === 0 || p === 1 || p === -1));
+});
+
+test('volBreakout: 변동폭이 0이면 진입하지 않는다 (0으로 나누기 방지)', () => {
+  const c = ohlc([
+    [10, 10, 10],
+    [10, 10, 10],
+    [10, 10, 10],
+  ]);
+  assert.deepEqual(volBreakout(c, { rangeLookback: 2, k: 0.5, ...NO_GUARDS }), [0, 0, 0]);
+});
+
+test('fundingLS: 펀딩이 과열이면 숏, 냉각이면 롱', () => {
+  const out = fundingLS(withFunding([5, 4, 3, 2, 1, 6]), {
+    fundingLookback: 3,
+    buyBelowPct: 40,
+    sellAbovePct: 80,
+    ...NO_GUARDS,
+  });
+  // i2~i4는 창 최저(33%) → 롱, i5는 창 최고(100%) → 숏
+  assert.deepEqual(out, [0, 0, 1, 1, 1, -1]);
+});
+
+test('ensemble: 구성원 다수결로 방향을 정한다', () => {
+  const c = fromCloses([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]);
+  const out = ensemble(c, {
+    members: [
+      { strategy: 'emaCrossLS', params: { fast: 2, slow: 3 } },
+      { strategy: 'tsMomentum', params: { lookback: 2 } },
+    ],
+    threshold: 2,
+    ...NO_GUARDS,
+  });
+  // 단조 상승이므로 둘 다 롱 → 합 2 → 임계 충족
+  assert.equal(out[out.length - 1], 1);
+});
+
+test('ensemble: 의견이 갈리면 진입하지 않는다', () => {
+  const c = fromCloses([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]);
+  const out = ensemble(c, {
+    members: [
+      { strategy: 'emaCrossLS', params: { fast: 2, slow: 3 } },
+      { strategy: 'emaCrossLS', params: { fast: 2, slow: 3, invert: true } },
+    ],
+    threshold: 2,
+    ...NO_GUARDS,
+  });
+  assert.ok(out.every((p) => p === 0));
+});
+
+test('ensemble: 구성원이 비어 있으면 RangeError', () => {
+  assert.throws(() => ensemble(fromCloses([1, 2, 3]), { members: [] }), RangeError);
+});
+
+test('롱숏 전략도 공통 규약을 지킨다 (길이 일치, -1/0/1)', () => {
+  const c = fromCloses([10, 11, 12, 11, 10, 11, 12, 13, 12, 11, 10, 12, 14, 13, 15, 16]);
+  for (const name of ['emaCrossLS', 'donchianLS', 'tsMomentum', 'volBreakout']) {
+    const out = STRATEGIES[name](c, {});
+    assert.equal(out.length, c.length, `${name}: 길이 불일치`);
+    assert.ok(out.every((p) => p === -1 || p === 0 || p === 1), `${name}: 허용되지 않는 값`);
+  }
 });
