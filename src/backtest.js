@@ -1,4 +1,4 @@
-'use strict';
+"use strict";
 
 // 백테스트 엔진 코어 — 순수 함수. 네트워크·파일 I/O 없음.
 //
@@ -16,43 +16,52 @@
 const BPS = 10000;
 
 function assertPositiveNumber(value, name) {
-  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
     throw new RangeError(`${name}은(는) 양의 유한수여야 합니다: ${value}`);
   }
 }
 
 function assertNonNegativeNumber(value, name) {
-  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
     throw new RangeError(`${name}은(는) 0 이상의 유한수여야 합니다: ${value}`);
   }
 }
 
-function validate(candles, targetPositions, feeBps, slippageBps, initialEquity) {
+function validate(
+  candles,
+  targetPositions,
+  feeBps,
+  slippageBps,
+  initialEquity,
+) {
   if (!Array.isArray(candles) || candles.length === 0) {
-    throw new TypeError('candles는 비어 있지 않은 배열이어야 합니다');
+    throw new TypeError("candles는 비어 있지 않은 배열이어야 합니다");
   }
-  if (!Array.isArray(targetPositions) || targetPositions.length !== candles.length) {
+  if (
+    !Array.isArray(targetPositions) ||
+    targetPositions.length !== candles.length
+  ) {
     throw new TypeError(
-      `targetPositions 길이(${targetPositions?.length})가 candles 길이(${candles.length})와 다릅니다 — 신호와 봉의 정렬이 어긋나면 성과 전체가 무의미해집니다`
+      `targetPositions 길이(${targetPositions?.length})가 candles 길이(${candles.length})와 다릅니다 — 신호와 봉의 정렬이 어긋나면 성과 전체가 무의미해집니다`,
     );
   }
   targetPositions.forEach((p, i) => {
-    if (typeof p !== 'number' || !Number.isFinite(p) || p < -1 || p > 1) {
+    if (typeof p !== "number" || !Number.isFinite(p) || p < -1 || p > 1) {
       throw new TypeError(
-        `targetPositions[${i}]은 -1(전량 숏)~1(전량 롱) 사이 수여야 합니다: ${p}`
+        `targetPositions[${i}]은 -1(전량 숏)~1(전량 롱) 사이 수여야 합니다: ${p}`,
       );
     }
   });
   candles.forEach((c, i) => {
-    if (!c || typeof c !== 'object') {
+    if (!c || typeof c !== "object") {
       throw new TypeError(`candles[${i}]가 객체가 아닙니다`);
     }
     assertPositiveNumber(c.open, `candles[${i}].open`);
     assertPositiveNumber(c.close, `candles[${i}].close`);
   });
-  assertNonNegativeNumber(feeBps, 'feeBps');
-  assertNonNegativeNumber(slippageBps, 'slippageBps');
-  assertPositiveNumber(initialEquity, 'initialEquity');
+  assertNonNegativeNumber(feeBps, "feeBps");
+  assertNonNegativeNumber(slippageBps, "slippageBps");
+  assertPositiveNumber(initialEquity, "initialEquity");
 }
 
 function runBacktest({
@@ -62,11 +71,28 @@ function runBacktest({
   slippageBps = 5,
   initialEquity = 1000,
   fundingCost = false,
+  // 'taker' — 다음 봉 시가에 시장가로 즉시 체결. 확실하지만 비싸다.
+  // 'maker' — 시가에서 makerOffsetBps만큼 유리한 쪽에 지정가를 걸고, 봉이 그 값에
+  //           닿아야 체결된다. 수수료는 싸지만 **체결이 보장되지 않는다**.
+  //           초단타는 봉당 움직임이 왕복 테이커 비용보다 작아 메이커가 사실상 전제인데,
+  //           미체결 위험을 빼고 계산하면 존재하지 않는 전략이 만들어진다.
+  execution = "taker",
+  takerFeeBps = null,
+  makerFeeBps = 2,
+  makerOffsetBps = 2,
 } = {}) {
   validate(candles, targetPositions, feeBps, slippageBps, initialEquity);
+  if (execution !== "taker" && execution !== "maker") {
+    throw new RangeError(
+      `execution은 taker 또는 maker여야 합니다: ${execution}`,
+    );
+  }
 
-  const feeRate = feeBps / BPS;
-  const slipRate = slippageBps / BPS;
+  const isMaker = execution === "maker";
+  const feeRate = (isMaker ? makerFeeBps : (takerFeeBps ?? feeBps)) / BPS;
+  // 지정가는 스스로 가격을 정하므로 슬리피지가 없다. 대신 미체결 위험을 진다.
+  const slipRate = isMaker ? 0 : slippageBps / BPS;
+  const offsetRate = makerOffsetBps / BPS;
 
   let cash = initialEquity;
   let units = 0; // 음수면 숏
@@ -91,47 +117,63 @@ function runBacktest({
       const targetChanged = Math.abs(desired - currentTarget) > 1e-12;
 
       if (dir !== 0 && targetChanged) {
-        const fill = price * (1 + dir * slipRate);
-        const targetUnits = (desired * equityAtOpen) / fill;
-        const delta = targetUnits - units;
-        const tradedNotional = Math.abs(delta) * fill;
+        // 메이커는 시가보다 유리한 쪽에 걸고, 봉이 그 값에 닿아야 체결된다.
+        const fill = isMaker
+          ? price * (1 - dir * offsetRate)
+          : price * (1 + dir * slipRate);
+        // 메이커는 봉이 지정가에 닿아야 체결된다. 미체결이면 currentTarget을 갱신하지
+        // 않아 다음 봉에서 다시 걸리고, **포지션은 그대로 남아 펀딩도 계속 나간다**.
+        const filled =
+          !isMaker ||
+          (dir > 0 ? candles[i].low <= fill : candles[i].high >= fill);
+        if (filled) {
+          const targetUnits = (desired * equityAtOpen) / fill;
+          const delta = targetUnits - units;
+          const tradedNotional = Math.abs(delta) * fill;
 
-        const prevSide = Math.sign(units);
-        // 차액만 거래한다. 전량 청산 후 재진입으로 계산하면 회전이 잦은 전략의
-        // 수수료가 실제의 두 배로 잡힌다.
-        cash -= delta * fill + tradedNotional * feeRate;
-        units = targetUnits;
-        currentTarget = desired;
-        const newSide = Math.sign(units);
+          const prevSide = Math.sign(units);
+          // 차액만 거래한다. 전량 청산 후 재진입으로 계산하면 회전이 잦은 전략의
+          // 수수료가 실제의 두 배로 잡힌다.
+          cash -= delta * fill + tradedNotional * feeRate;
+          units = targetUnits;
+          currentTarget = desired;
+          const newSide = Math.sign(units);
 
-        if (prevSide !== 0 && newSide !== prevSide) {
-          const exitEquity = cash + units * fill;
-          trades.push({
-            ...open,
-            exitIndex: i,
-            exitTime: candles[i].openTime,
-            exitPrice: fill,
-            exitEquity,
-            pnl: exitEquity - open.entryEquity,
-            returnPct: ((exitEquity - open.entryEquity) / open.entryEquity) * 100,
-          });
-          open = null;
-        }
-        if (newSide !== 0 && newSide !== prevSide) {
-          open = {
-            entryIndex: i,
-            entryTime: candles[i].openTime,
-            entryPrice: fill,
-            entryEquity: equityAtOpen,
-            side: newSide > 0 ? 'long' : 'short',
-          };
+          if (prevSide !== 0 && newSide !== prevSide) {
+            const exitEquity = cash + units * fill;
+            trades.push({
+              ...open,
+              exitIndex: i,
+              exitTime: candles[i].openTime,
+              exitPrice: fill,
+              exitEquity,
+              pnl: exitEquity - open.entryEquity,
+              returnPct:
+                ((exitEquity - open.entryEquity) / open.entryEquity) * 100,
+            });
+            open = null;
+          }
+          if (newSide !== 0 && newSide !== prevSide) {
+            open = {
+              entryIndex: i,
+              entryTime: candles[i].openTime,
+              entryPrice: fill,
+              entryEquity: equityAtOpen,
+              side: newSide > 0 ? "long" : "short",
+            };
+          }
         }
       }
     }
 
     // 무기한 선물은 8시간마다 펀딩을 주고받는다. 롱은 펀딩이 양수일 때 지불한다.
     // 빼먹으면 장기 보유 전략의 성과가 실제보다 좋게 나온다.
-    if (fundingCost && units !== 0 && candles[i].fundingSettled && candles[i].funding != null) {
+    if (
+      fundingCost &&
+      units !== 0 &&
+      candles[i].fundingSettled &&
+      candles[i].funding != null
+    ) {
       const notional = Math.abs(units) * candles[i].close;
       cash -= Math.sign(units) * notional * candles[i].funding;
     }
@@ -139,7 +181,13 @@ function runBacktest({
     equity.push(cash + units * candles[i].close);
   }
 
-  return { equity, trades, open, initialEquity, finalEquity: equity[equity.length - 1] };
+  return {
+    equity,
+    trades,
+    open,
+    initialEquity,
+    finalEquity: equity[equity.length - 1],
+  };
 }
 
 // 자산곡선 고점 대비 최대 하락폭(%).
@@ -160,14 +208,17 @@ function summarize(result) {
 
   const wins = trades.filter((t) => t.pnl > 0);
   const grossProfit = wins.reduce((sum, t) => sum + t.pnl, 0);
-  const grossLoss = trades.filter((t) => t.pnl < 0).reduce((sum, t) => sum - t.pnl, 0);
+  const grossLoss = trades
+    .filter((t) => t.pnl < 0)
+    .reduce((sum, t) => sum - t.pnl, 0);
 
   return {
     totalReturnPct: (finalEquity / initialEquity - 1) * 100,
     maxDrawdownPct: maxDrawdownPct(equity),
     tradeCount: trades.length,
     winCount: wins.length,
-    winRatePct: trades.length === 0 ? null : (wins.length / trades.length) * 100,
+    winRatePct:
+      trades.length === 0 ? null : (wins.length / trades.length) * 100,
     profitFactor: grossLoss === 0 ? null : grossProfit / grossLoss,
     openPosition: result.open !== null,
   };
