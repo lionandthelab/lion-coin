@@ -90,4 +90,64 @@ function mergeHistory(history, entry, maxLen = DEFAULT_MAX_HISTORY) {
   return next.length > maxLen ? next.slice(next.length - maxLen) : next;
 }
 
-module.exports = { BUY_AND_HOLD, DEFAULT_MAX_HISTORY, evaluateCandidates, mergeHistory };
+const median = (xs) => {
+  const sorted = [...xs].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
+};
+
+// 후보별로 심볼을 가로질러 집계한다.
+//
+// 단일 심볼 성과가 일반화되지 않는다는 것이 워크포워드 연구의 결론이었다
+// (docs/walkforward-evaluation.md). 전방 검증도 같은 규율을 따라야 하므로,
+// 평균만이 아니라 **최악 심볼**과 **플러스 심볼 수**를 함께 본다 — 평균은
+// 한 심볼의 대박이 나머지를 가릴 수 있다.
+function summarizeArena(state) {
+  const symbols = state.symbols || [];
+
+  return (state.candidates || []).map((candidate) => {
+    const rows = [];
+    for (const symbol of symbols) {
+      const history = state.series?.[symbol]?.history || [];
+      const latest = history[history.length - 1];
+      const row = latest?.rows?.find((r) => r.id === candidate.id);
+      if (row) rows.push({ symbol, ...row });
+    }
+
+    if (rows.length === 0) {
+      return {
+        id: candidate.id,
+        strategy: candidate.strategy,
+        symbolCount: 0,
+        meanReturnPct: null,
+        medianReturnPct: null,
+        worstReturnPct: null,
+        maxDrawdownPct: null,
+        positiveSymbols: 0,
+        positions: [],
+      };
+    }
+
+    const returns = rows.map((r) => r.totalReturnPct);
+    return {
+      id: candidate.id,
+      strategy: candidate.strategy,
+      symbolCount: rows.length,
+      meanReturnPct: returns.reduce((a, b) => a + b, 0) / returns.length,
+      medianReturnPct: median(returns),
+      worstReturnPct: Math.min(...returns),
+      // 최악 낙폭을 대표값으로 쓴다 — 평균 낙폭은 계좌가 실제로 견뎌야 할 값이 아니다.
+      maxDrawdownPct: Math.max(...rows.map((r) => r.maxDrawdownPct)),
+      positiveSymbols: returns.filter((v) => v > 0).length,
+      positions: rows.map((r) => ({ symbol: r.symbol, position: r.position })),
+    };
+  });
+}
+
+module.exports = {
+  BUY_AND_HOLD,
+  DEFAULT_MAX_HISTORY,
+  evaluateCandidates,
+  mergeHistory,
+  summarizeArena,
+};

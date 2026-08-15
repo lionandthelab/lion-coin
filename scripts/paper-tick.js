@@ -14,7 +14,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { fetchKlinesRange } = require('../src/klines');
 const { fetchFundingRange, attachFunding } = require('../src/funding');
-const { evaluateCandidates, mergeHistory } = require('../src/paper');
+const { evaluateCandidates, mergeHistory, summarizeArena } = require('../src/paper');
 
 const STATE_PATH = path.join(__dirname, '..', 'harness', 'paper.json');
 
@@ -23,42 +23,28 @@ function firstIndexAtOrAfter(candles, timeMs) {
   return i === -1 ? candles.length - 1 : i;
 }
 
-async function main() {
-  const state = JSON.parse(fs.readFileSync(STATE_PATH, 'utf8'));
-
-  const warmupStart = Date.parse(`${state.warmupStart}T00:00:00Z`);
-  const paperStart = Date.parse(`${state.paperStart}T00:00:00Z`);
-  const now = Date.now();
-
+async function tickSymbol(state, symbol, warmupStart, paperStart, now) {
   const priceOnly = await fetchKlinesRange({
-    symbol: state.symbol,
+    symbol,
     interval: state.interval,
     startTime: warmupStart,
     endTime: now,
   });
-  if (priceOnly.length === 0) {
-    throw new Error('캔들을 받지 못했습니다');
-  }
+  if (priceOnly.length === 0) throw new Error(`${symbol}: 캔들을 받지 못했습니다`);
 
-  const funding = await fetchFundingRange({
-    symbol: state.symbol,
-    startTime: warmupStart,
-    endTime: now,
-  });
+  const funding = await fetchFundingRange({ symbol, startTime: warmupStart, endTime: now });
   const candles = attachFunding(priceOnly, funding);
 
   // 마지막 봉은 아직 진행 중일 수 있다. 닫힌 봉만 쓴다 — 진행 중인 봉의 종가로
   // 판단하면 그 값이 나중에 바뀌므로 사실상 미래를 보는 것과 같다.
   const closed = candles.filter((c) => c.closeTime < now);
-  if (closed.length === 0) {
-    throw new Error('닫힌 봉이 없습니다');
-  }
+  if (closed.length === 0) throw new Error(`${symbol}: 닫힌 봉이 없습니다`);
 
   const equityFromIndex = firstIndexAtOrAfter(closed, paperStart);
   const rows = evaluateCandidates(state.candidates, closed, state.costs, { equityFromIndex });
-
   const latest = closed[closed.length - 1];
-  const entry = {
+
+  return {
     candleOpenTime: latest.openTime,
     close: latest.close,
     rows: rows.map((r) => ({
@@ -70,24 +56,54 @@ async function main() {
       tradeCount: r.summary.tradeCount,
     })),
   };
+}
 
-  state.history = mergeHistory(state.history, entry);
+const fmt = (v) => (v == null ? '   n/a' : `${v >= 0 ? '+' : ''}${v.toFixed(2)}%`);
+
+async function main() {
+  const state = JSON.parse(fs.readFileSync(STATE_PATH, 'utf8'));
+
+  const warmupStart = Date.parse(`${state.warmupStart}T00:00:00Z`);
+  const paperStart = Date.parse(`${state.paperStart}T00:00:00Z`);
+  const now = Date.now();
+
+  const failures = [];
+  for (const symbol of state.symbols) {
+    try {
+      const entry = await tickSymbol(state, symbol, warmupStart, paperStart, now);
+      state.series[symbol] ||= { history: [] };
+      state.series[symbol].history = mergeHistory(state.series[symbol].history, entry);
+    } catch (err) {
+      // 한 심볼이 실패해도 나머지는 기록한다 — 한 틱 빠지는 것보다 전부 멈추는 게 나쁘다.
+      failures.push(`${symbol}: ${err.message}`);
+    }
+  }
+
   state.lastTickAt = new Date(now).toISOString();
   fs.writeFileSync(STATE_PATH, JSON.stringify(state, null, 2) + '\n');
 
+  const days = Math.max(0, Math.floor((now - paperStart) / 86400000));
   console.log(
-    `페이퍼 틱 — ${state.symbol} ${state.interval} · 마지막 봉 ${new Date(latest.openTime).toISOString()} ` +
-      `· 종가 ${latest.close} · 기록 ${state.history.length}건 (모의, 실거래 아님)`
+    `페이퍼 틱 — ${state.symbols.join(', ')} ${state.interval} · ${state.paperStart} 시작 (${days}일차) · 모의, 실거래 아님`
   );
-  for (const r of entry.rows) {
+  for (const f of failures) console.log(`  ⚠ ${f}`);
+
+  const arena = summarizeArena(state);
+  console.log(
+    `  ${'후보'.padEnd(18)}${'평균'.padStart(9)}${'중앙'.padStart(9)}${'최악'.padStart(9)}${'최대MDD'.padStart(9)}${'플러스'.padStart(8)}  포지션`
+  );
+  for (const a of arena) {
+    const pos = a.positions.map((p) => `${p.symbol.replace('USDT', '')}:${p.position > 0 ? 'L' : p.position < 0 ? 'S' : '-'}`).join(' ');
     console.log(
-      `  ${r.id.padEnd(20)} 포지션 ${r.position}  수익 ${r.totalReturnPct >= 0 ? '+' : ''}${r.totalReturnPct.toFixed(2)}%  ` +
-        `MDD ${r.maxDrawdownPct.toFixed(2)}%  트레이드 ${r.tradeCount}`
+      `  ${a.id.padEnd(18)}${fmt(a.meanReturnPct).padStart(9)}${fmt(a.medianReturnPct).padStart(9)}` +
+        `${fmt(a.worstReturnPct).padStart(9)}` +
+        `${(a.maxDrawdownPct == null ? '  n/a' : `${a.maxDrawdownPct.toFixed(2)}%`).padStart(9)}` +
+        `${`${a.positiveSymbols}/${a.symbolCount}`.padStart(8)}  ${pos}`
     );
   }
 }
 
 main().catch((err) => {
-  console.error(err.message);
+  console.error(err.stack || err.message);
   process.exit(2);
 });
