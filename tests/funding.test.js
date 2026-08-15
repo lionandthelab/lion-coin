@@ -93,3 +93,27 @@ test('attachFunding: 캔들에 funding 필드를 붙인다 (원본은 건드리�
   assert.equal(out[0].close, 100, '기존 필드 보존');
   assert.equal(c[0].funding, undefined, '원본 캔들은 변경되지 않는다');
 });
+
+// ---- fundingSettled ----
+// 펀딩은 8시간마다 정산되지만 캔들은 1시간마다다. 백테스트가 펀딩 비용을
+// 물리려면 "이 봉에서 정산이 일어났는가"를 알아야 한다 — 이어 쓴 값에
+// 매 봉 과금하면 8배를 물린다.
+
+test('attachFunding: 정산이 일어난 봉에만 fundingSettled=true', () => {
+  const c = candles(4);
+  const out = attachFunding(c, parseFundingRates([row(0, '0.001'), row(7200000, '0.002')]));
+  assert.deepEqual(out.map((x) => x.fundingSettled), [true, false, true, false]);
+});
+
+test('attachFunding: 첫 정산 이전 봉은 fundingSettled=false', () => {
+  const out = attachFunding(candles(3), parseFundingRates([row(7200000, '0.001')]));
+  assert.deepEqual(out.map((x) => x.fundingSettled), [false, false, true]);
+});
+
+test('attachFunding: 한 봉에 정산이 여러 번이면 한 번만 표시한다', () => {
+  // 4시간봉 하나에 8시간 정산이 두 번 들어오는 경우는 없지만, 데이터 이상에 대비
+  const wide = [{ openTime: 0, open: 1, high: 1, low: 1, close: 1, volume: 1, closeTime: 99999999 }];
+  const out = attachFunding(wide, parseFundingRates([row(0, '0.001'), row(28800000, '0.002')]));
+  assert.equal(out[0].fundingSettled, true);
+  assert.equal(out[0].funding, 0.002, '가장 최근 정산값이 남는다');
+});

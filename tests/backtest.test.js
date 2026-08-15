@@ -114,12 +114,12 @@ test('runBacktest: 신호 길이가 캔들 수와 다르면 TypeError (정렬 �
   assert.throws(() => runBacktest({ candles: fixture(), targetPositions: [1, 0] }), TypeError);
 });
 
-test('runBacktest: 신호가 0 또는 1이 아니면 TypeError', () => {
+test('runBacktest: 신호가 -1/0/1이 아닌 값이면 TypeError', () => {
   assert.throws(
     () => runBacktest({ candles: fixture(), targetPositions: [1, 0.5, 0, 0] }),
     TypeError
   );
-  assert.throws(() => runBacktest({ candles: fixture(), targetPositions: [1, -1, 0, 0] }), TypeError);
+  assert.throws(() => runBacktest({ candles: fixture(), targetPositions: [1, '1', 0, 0] }), TypeError);
 });
 
 test('runBacktest: 비용·초기자본이 음수/0이면 RangeError', () => {
@@ -180,4 +180,115 @@ test('summarize: 손실 트레이드가 없으면 손익비는 null (Infinity를
   assert.equal(s.tradeCount, 1);
   assert.equal(s.profitFactor, null);
   near(s.winRatePct, 100);
+});
+
+// ---- 숏 지원 (롱/숏 양방향) ----
+// 검증 6폴드 중 4개가 하락장이었고 롱 온리가 할 수 있는 최선은 "덜 잃기"였다.
+// targetPositions에 -1을 허용해 하락에서도 수익이 가능한 구조로 넓힌다.
+// 현물로는 불가능하고 무기한 선물이 전제이므로, 펀딩 비용도 함께 모델링한다.
+
+test('runBacktest: -1은 숏 진입이며 가격이 내리면 수익이 난다', () => {
+  const r = runBacktest({ candles: fixture(), targetPositions: [-1, -1, 0, 0], ...FREE });
+  // c1 시가 100에 숏 → c3 시가 120에 커버 → 20% 손실
+  assert.equal(r.trades.length, 1);
+  assert.equal(r.trades[0].side, 'short');
+  near(r.trades[0].entryPrice, 100);
+  near(r.trades[0].exitPrice, 120);
+  near(r.finalEquity, 800);
+});
+
+test('runBacktest: 하락 구간 숏은 수익이다', () => {
+  // 시가 100 → 시가 80으로 내리는 3봉
+  const down = [
+    candle(0, 100, 100, 100, 100),
+    candle(3600000, 100, 100, 90, 90),
+    candle(7200000, 80, 80, 80, 80),
+  ];
+  const r = runBacktest({ candles: down, targetPositions: [-1, 0, 0], ...FREE });
+  // c1 시가 100에 숏 → c2 시가 80에 커버 → +20%
+  near(r.finalEquity, 1200);
+});
+
+test('runBacktest: 숏 보유 중 자산곡선은 가격과 반대로 움직인다', () => {
+  const down = [
+    candle(0, 100, 100, 100, 100),
+    candle(3600000, 100, 100, 90, 90),
+    candle(7200000, 90, 90, 80, 80),
+  ];
+  const r = runBacktest({ candles: down, targetPositions: [-1, -1, -1], ...FREE });
+  // c1 시가 100 숏 진입, 종가 90 → +10% / c2 종가 80 → +20%
+  assert.deepEqual(r.equity, [1000, 1100, 1200]);
+});
+
+test('runBacktest: 롱에서 숏으로 뒤집으면 청산과 진입 수수료가 모두 든다', () => {
+  const args = { candles: fixture(), targetPositions: [1, -1, -1, -1] };
+  const free = runBacktest({ ...args, ...FREE });
+  const paid = runBacktest({ ...args, feeBps: 10, slippageBps: 0, initialEquity: 1000 });
+  assert.equal(free.trades.length, 1, '롱 한 건이 청산됨');
+  assert.equal(free.trades[0].side, 'long');
+  assert.ok(paid.finalEquity < free.finalEquity);
+});
+
+test('runBacktest: 신호가 -1/0/1이 아니면 TypeError', () => {
+  assert.throws(() => runBacktest({ candles: fixture(), targetPositions: [2, 0, 0, 0] }), TypeError);
+  assert.throws(
+    () => runBacktest({ candles: fixture(), targetPositions: [-2, 0, 0, 0] }),
+    TypeError
+  );
+});
+
+// ---- 펀딩 비용 ----
+// 무기한 선물은 8시간마다 펀딩을 주고받는다. 롱은 펀딩이 양수일 때 지불한다.
+// 이걸 빼먹으면 장기 보유 전략의 성과가 실제보다 좋게 나온다.
+
+function withFunding(rows) {
+  return rows.map(([open, close, funding, settled], i) => ({
+    openTime: i * 3600000,
+    open,
+    high: Math.max(open, close),
+    low: Math.min(open, close),
+    close,
+    volume: 1,
+    closeTime: i * 3600000 + 3599999,
+    funding,
+    fundingSettled: settled,
+  }));
+}
+
+test('runBacktest: fundingCost를 켜면 롱은 양의 펀딩을 지불한다', () => {
+  const c = withFunding([
+    [100, 100, 0.001, false],
+    [100, 100, 0.001, true],
+  ]);
+  const off = runBacktest({ candles: c, targetPositions: [1, 1], ...FREE });
+  const on = runBacktest({ candles: c, targetPositions: [1, 1], ...FREE, fundingCost: true });
+  near(off.finalEquity, 1000, '펀딩 미적용이면 가격이 안 움직였으니 그대로');
+  near(on.finalEquity, 999, '명목 1000 × 0.1% 지불');
+});
+
+test('runBacktest: 숏은 양의 펀딩을 수취한다', () => {
+  const c = withFunding([
+    [100, 100, 0.001, false],
+    [100, 100, 0.001, true],
+  ]);
+  const on = runBacktest({ candles: c, targetPositions: [-1, -1], ...FREE, fundingCost: true });
+  near(on.finalEquity, 1001);
+});
+
+test('runBacktest: 정산 봉이 아니면 펀딩을 물리지 않는다', () => {
+  const c = withFunding([
+    [100, 100, 0.001, false],
+    [100, 100, 0.001, false],
+  ]);
+  const on = runBacktest({ candles: c, targetPositions: [1, 1], ...FREE, fundingCost: true });
+  near(on.finalEquity, 1000);
+});
+
+test('runBacktest: 포지션이 없으면 펀딩과 무관하다', () => {
+  const c = withFunding([
+    [100, 100, 0.01, true],
+    [100, 100, 0.01, true],
+  ]);
+  const on = runBacktest({ candles: c, targetPositions: [0, 0], ...FREE, fundingCost: true });
+  near(on.finalEquity, 1000);
 });

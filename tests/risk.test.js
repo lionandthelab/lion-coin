@@ -155,3 +155,50 @@ test('applyRiskGuards: 음수 배수·한도는 RangeError', () => {
     RangeError
   );
 });
+
+// ---- 숏 대칭 ----
+// 숏은 손실 방향이 반대다. 가드가 롱 기준으로만 짜여 있으면 숏에서는
+// 손절이 영영 걸리지 않거나 즉시 걸린다 — 둘 다 계좌를 날린다.
+
+test('applyRiskGuards: 숏은 저점 + mult×ATR 위로 올라가면 손절한다', () => {
+  // 저점 98, ATR 1, mult 2 → 손절선 100. c3 종가 101이 이를 뚫는다.
+  const candles = series([100, 98, 99, 101]);
+  const out = applyRiskGuards(candles, [-1, -1, -1, -1], {
+    atrSeries: flatAtr(4),
+    atrStopMult: 2,
+    dailyLossLimitPct: null,
+  });
+  assert.deepEqual(out, [-1, -1, -1, 0]);
+});
+
+test('applyRiskGuards: 숏이 유리하게 움직이면 건드리지 않는다', () => {
+  const candles = series([100, 98, 96, 94]);
+  const out = applyRiskGuards(candles, [-1, -1, -1, -1], {
+    atrSeries: flatAtr(4),
+    atrStopMult: 2,
+    dailyLossLimitPct: null,
+  });
+  assert.deepEqual(out, [-1, -1, -1, -1]);
+});
+
+test('applyRiskGuards: 숏의 일일 손실 한도는 가격 상승으로 계산한다', () => {
+  // 진입 100 → 종가 106은 숏에게 -6%
+  const candles = series([100, 106, 106, 106]);
+  const out = applyRiskGuards(candles, [-1, -1, -1, -1], {
+    atrSeries: flatAtr(4),
+    atrStopMult: null,
+    dailyLossLimitPct: 5,
+  });
+  assert.deepEqual(out, [-1, 0, 0, 0]);
+});
+
+test('applyRiskGuards: 방향을 뒤집을 때는 손절 차단이 풀린다', () => {
+  // 롱에서 손절된 뒤 원신호가 숏으로 바뀌면 진입할 수 있어야 한다
+  const candles = series([100, 102, 99, 98]);
+  const out = applyRiskGuards(candles, [1, 1, -1, -1], {
+    atrSeries: flatAtr(4),
+    atrStopMult: 2,
+    dailyLossLimitPct: null,
+  });
+  assert.deepEqual(out, [1, 1, -1, -1]);
+});
