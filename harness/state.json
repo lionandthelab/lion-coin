@@ -27,7 +27,9 @@
       "title": "Esplora API로 테스트넷 UTXO·잔액 조회 모듈 (balance.js)",
       "status": "done",
       "requires_human": false,
-      "depends_on": ["A1"],
+      "depends_on": [
+        "A1"
+      ],
       "notes": "회차 3 완료. src/balance.js — mempool.space testnet Esplora API. parseUtxos/sumSats는 TDD(테스트 7개), fetchUtxos/fetchBalanceSats는 fetch 래퍼로 얇게 유지(check-goal.js 패턴과 동일, 네트워크 호출은 단위테스트 대상 아님)."
     },
     {
@@ -63,7 +65,9 @@
       "title": "Stacker News 연재 1편 초안 (영문): Building a Bitcoin Wallet from Scratch",
       "status": "done",
       "requires_human": false,
-      "depends_on": ["A1"],
+      "depends_on": [
+        "A1"
+      ],
       "notes": "회차 1 완료. drafts/01-building-a-bitcoin-wallet-from-scratch.md — wallet.js·BIP84 테스트 벡터 소재. 게시(C5)는 C3(계정 개설) 이후 사람이 진행."
     },
     {
@@ -81,7 +85,9 @@
       "title": ".env에 BLINK_API_KEY 설정 (dashboard.blink.sv에서 Read 키 발급)",
       "status": "pending",
       "requires_human": true,
-      "depends_on": ["B1"],
+      "depends_on": [
+        "B1"
+      ],
       "notes": "2026-07-17: 키 입력됐으나 401 — ak_v2_ 접두사로 다른 서비스 키로 보임. 2026-07-21: 재확인 결과 여전히 동일한 ak_v2_ 키(79자), 미교체. Blink 공식 문서(dev.blink.sv/api/auth) 재확인해 blink_ 접두사가 맞음을 재확인, ACTION_REQUIRED.md에 정확한 발급 경로(좌측 메뉴 API Keys → + → Read+Receive 스코프)로 갱신. npm run check-goal이 configured:true면 완료. 2026-07-22~08-04: 글로벌 claude CLI 설치 손상으로 하네스 14회차 연속 미기동(코드 변경 없음). 2026-08-05 회차7 복구 후 재확인 — .env 키는 여전히 동일한 ak_v2_ 접두사, 미교체 상태 유지. 2026-08-05 회차8: check-goal의 401 왕복 없이 즉시 형식을 점검할 수 있도록 `npm run verify-blink-key` 추가(harness/lib/core.js의 validateBlinkKeyFormat, TDD). 실행 결과 여전히 ak_v2_ 접두사로 판정 — 값 자체는 미변경. 2026-08-06 회차9: `verify-blink-key` 재확인 결과 동일(ak_v2_, 미교체) — 반복 진단 지양 방침에 따라 신규 진단·도구 추가 없이 상태만 재확인, ACTION_REQUIRED.md는 변경 없이 유지(이미 정확함). 2026-08-08 회차10: check-goal(401)·verify-blink-key(ak_v2_) 재확인 결과 동일, 07-17부터 총 6회차 연속 미교체. task:null 상태에서 A3용 준비물(주소 생성)을 검토했으나 docs/SECURITY.md 3절('니모닉 단계는 에이전트가 관여하지 않음')과 상충해 보류 — 사람이 로컬에서 직접 생성하는 현재 절차 유지. 2026-08-09 회차11: check-goal(401)·verify-blink-key(ak_v2_) 재확인 결과 동일, 07-17부터 총 7회차 연속 미교체. 이번 회차는 반복 진단 대신 dev.blink.sv/api/auth 공식 문서를 3주 만에 재조회해 blink_ 접두사 요구사항이 그대로인지 확인 — 변경 없음, ACTION_REQUIRED.md의 안내가 여전히 정확함을 재검증. 2026-08-10 회차12: check-goal(401)·verify-blink-key(ak_v2_) 재확인 결과 동일, 07-17부터 총 8회차 연속 미교체. 이번 회차는 B1/B2 재진단 대신 B1에 의존한다고 잘못 알려져 있던 C3(Stacker News 계정 개설)를 B1 없이도 진행할 수 있는 경로(Nostr 로그인)를 찾아 사람 작업 착수 조건을 넓혔다. 2026-08-11 회차13: check-goal(401)·verify-blink-key(ak_v2_) 재확인 결과 동일, 07-17부터 총 9회차 연속 미교체. 반복 진단 지양 방침에 따라 이번 회차는 B1/B2가 아닌 A3(faucet) 준비물 보강에 집중 — mempool.space faucet 백업으로 coinfaucet.eu/en/btc-testnet4 를 조사·검증(hCaptcha, tb1q 주소 수용 확인)해 ACTION_REQUIRED.md에 추가. 2026-08-12 회차14: check-goal(401)·verify-blink-key(ak_v2_) 재확인 결과 동일, 07-17부터 총 10회차 연속 미교체 — 신규 진단 없이 확인만 하고, 이번 회차 작업은 A3 준비물(testnet4 balance 확인 URL) 보강에 집중. 2026-08-13 회차15: check-goal(401)·verify-blink-key(ak_v2_) 재확인 결과 동일, 07-17부터 총 11회차 연속 미교체. B1/A3/C3 개별 준비물은 이미 소진돼 반복 조사 대신 ACTION_REQUIRED.md 최상단에 우선순위 안내를 추가 — A3·C3는 목표 판정과 무관하거나 부분적일 뿐, B1→B2만이 실제 600 sats 수령으로 이어지는 유일한 경로임을 명시해 사람이 어디부터 손대야 할지 헷갈리지 않게 함. 2026-08-14 회차16: check-goal(401)·verify-blink-key(ak_v2_) 재확인 결과 동일, 07-17부터 총 12회차 연속 미교체. B1/A3/C3 준비물이 모두 소진된 상태이므로 이번 회차는 신규 진단·문서 변경 없이 재확인과 로그 기록만 진행. 2026-08-15 회차17: check-goal(401)·verify-blink-key(ak_v2_) 재확인 결과 동일, 07-17부터 총 13회차 연속 미교체(29일째). 반복 진단 대신 ACTION_REQUIRED.md 우선순위 안내 맨 위에 경과일수·연속 회차수를 명시해 사람이 체감할 긴급도를 높임(안내 내용 자체는 이미 정확해 변경 없음)."
     },
     {
@@ -90,7 +96,9 @@
       "title": "목표 체크 파이프라인 실검증 (소액 자가 인보이스 결제 테스트)",
       "status": "pending",
       "requires_human": false,
-      "depends_on": ["B2"],
+      "depends_on": [
+        "B2"
+      ],
       "notes": "자가 입금분은 goal.baseline_sats에 기록해 목표 수령액에서 제외."
     },
     {
@@ -99,7 +107,9 @@
       "title": "signet/testnet faucet에서 테스트 코인 수령",
       "status": "pending",
       "requires_human": true,
-      "depends_on": ["A1"],
+      "depends_on": [
+        "A1"
+      ],
       "notes": "사람 작업: faucet은 캡차가 있음. 에이전트가 주소를 만들어 로그에 안내. 2026-08-11 회차13: mempool.space faucet은 JS 렌더링이라 자동 점검 불가 — 백업으로 coinfaucet.eu/en/btc-testnet4(hCaptcha, tb1q 주소 수용, 장기 운영 확인)를 ACTION_REQUIRED.md에 추가. 2026-08-12 회차14: testnet4 faucet 사용 시 잔액 확인이 막히지 않도록 mempool.space testnet4 Esplora API(https://mempool.space/testnet4/api)가 실제로 응답함을 확인하고, ACTION_REQUIRED.md의 모호했던 `{baseUrl: '...'}` 자리표시자를 이 실제 URL로 채워 넣음(src/balance.js는 이미 baseUrl 옵션을 지원해 코드 변경은 불필요)."
     },
     {
@@ -108,7 +118,11 @@
       "title": "PSBT 구성·서명·브로드캐스트 (send.js) — 자기 주소로 첫 전송",
       "status": "pending",
       "requires_human": false,
-      "depends_on": ["A2", "A3", "A4"],
+      "depends_on": [
+        "A2",
+        "A3",
+        "A4"
+      ],
       "notes": "익스플로러에서 확인 가능한 txid를 로그에 기록."
     },
     {
@@ -117,7 +131,11 @@
       "title": "CLI 통합 (create | address | balance | send)",
       "status": "pending",
       "requires_human": false,
-      "depends_on": ["A1", "A2", "A5"],
+      "depends_on": [
+        "A1",
+        "A2",
+        "A5"
+      ],
       "notes": ""
     },
     {
@@ -126,7 +144,10 @@
       "title": "1호 상품 제작: 'Bitcoin Wallet from Scratch' 미니 가이드 (영문)",
       "status": "pending",
       "requires_human": false,
-      "depends_on": ["A5", "C1"],
+      "depends_on": [
+        "A5",
+        "C1"
+      ],
       "notes": "트랙 A 산출물을 그대로 상품화. products/ 폴더."
     },
     {
@@ -135,7 +156,9 @@
       "title": "라이트닝 결제 페이지 (LNURL-pay 링크 + 정적 페이지)",
       "status": "pending",
       "requires_human": false,
-      "depends_on": ["B1"],
+      "depends_on": [
+        "B1"
+      ],
       "notes": "Blink 라이트닝 주소(LNURL-pay) 기반 — pay.blink.sv 링크 또는 Blink API로 인보이스 생성. 정적 페이지는 site/ 폴더."
     },
     {
@@ -144,7 +167,10 @@
       "title": "결제 후 상품 전달 흐름 구성",
       "status": "pending",
       "requires_human": false,
-      "depends_on": ["B4", "C2"],
+      "depends_on": [
+        "B4",
+        "C2"
+      ],
       "notes": "webhook 또는 결제 확인 후 다운로드 링크."
     },
     {
@@ -162,7 +188,11 @@
       "title": "연재 게시 + 판매 링크 공유 (Stacker News)",
       "status": "pending",
       "requires_human": true,
-      "depends_on": ["C4", "C3", "B4"],
+      "depends_on": [
+        "C4",
+        "C3",
+        "B4"
+      ],
       "notes": "사람 작업: 게시는 사람이. 초안·링크는 에이전트가 준비."
     },
     {
@@ -178,10 +208,10 @@
       "id": "D3",
       "track": "D",
       "title": "기술 지표 모듈 (src/indicators.js — SMA/EMA/RSI/ATR)",
-      "status": "pending",
+      "status": "done",
       "requires_human": false,
       "depends_on": [],
-      "notes": "순수 함수. 워밍업 구간은 null로 채워 캔들 배열과 인덱스를 정렬한다."
+      "notes": "2026-08-15 완료. src/indicators.js — SMA/EMA/RSI/ATR, 테스트 12개. 모든 지표가 입력과 같은 길이를 돌려주고 워밍업은 null이라 캔들 인덱스와 항상 정렬된다. RSI·ATR은 Wilder 평활이며 손계산 값으로 고정. RSI의 손실 0 구간은 정의상 상한인 100(NaN 누출 방지)."
     },
     {
       "id": "D2",
@@ -189,26 +219,33 @@
       "title": "백테스트 엔진 코어 — 다음 봉 시가 체결·수수료·슬리피지·자산곡선 (src/backtest.js)",
       "status": "done",
       "requires_human": false,
-      "depends_on": ["D1"],
+      "depends_on": [
+        "D1"
+      ],
       "notes": "2026-08-15 완료. src/backtest.js — runBacktest/summarize를 TDD(테스트 17개). 체결 루프가 항상 직전 봉 판단을 이번 봉 시가에 채우므로 호출 방식과 무관하게 룩어헤드가 불가능하고, 비용 기본값을 10bps·5bps로 둬 비용 누락 결과가 기본으로 나오지 않는다. 미정의 지표(트레이드 0건 승률, 손실 0건 손익비)는 null. 롱 온리 전량 진입/청산만 지원 — 분할 매매는 범위 밖. 실데이터 종단 확인: 매수보유 -1.77% vs 순수 가격변동 -1.62%, 차이 0.15%가 진입 수수료+슬리피지와 일치."
     },
     {
       "id": "D4",
       "track": "D",
       "title": "1호 전략 구현 + 백테스트 리포트 (src/strategies/)",
-      "status": "pending",
+      "status": "done",
       "requires_human": false,
-      "depends_on": ["D2", "D3"],
-      "notes": "전략 인터페이스는 (candles, params) => targetPositions[]. 손절·일일 손실 한도를 전략에 코드로 포함."
+      "depends_on": [
+        "D2",
+        "D3"
+      ],
+      "notes": "2026-08-15 완료. src/strategies.js(emaCross·rsiReversion·donchianBreakout) + src/risk.js(트레일링 손절·일일 손실 한도), 테스트 25개. 전략은 \"원신호 → 리스크 가드\" 2단이며 가드를 통과한 결과만 내보내 손절 없는 신호가 백테스트에 들어갈 수 없다. 손절 판정은 종가 기준(봉 중간 저가 체결 가정은 낙관 편향). 일일 한도는 미실현까지 포함."
     },
     {
       "id": "D5",
       "track": "D",
       "title": "워크포워드 검증 — 인샘플/아웃오브샘플 분할 리포트",
-      "status": "pending",
+      "status": "done",
       "requires_human": false,
-      "depends_on": ["D4"],
-      "notes": "과최적화가 가장 흔한 실패 모드. 인샘플 성과는 홍보 근거로 쓰지 않는다(확장 제안서 §7)."
+      "depends_on": [
+        "D4"
+      ],
+      "notes": "2026-08-15 완료 — **결과는 게이트 미통과**. scripts/walkforward.js(npm run walkforward), 앵커드 롤링 6폴드 · 전략당 568조합. BTCUSDT 1h 31,736봉(2023-01-01~) 검증 결과 세 전략 모두 검증 구간 평균 수익 마이너스(emaCross -1.18%, rsiReversion -6.49%, donchianBreakout -7.41%), 플러스 폴드도 과반 미달. 학습-검증 괴리 89~177%p = 과최적화. 비용 0으로 재계산해도 9개 중 8개가 마이너스라 수수료 문제가 아니라 엣지 부재. 파라미터 탐색이 세 전략 모두에서 손절을 꺼버림(atrStopMult:null) — 향후 탐색에서 손절은 최적화 대상이 아니라 고정 제약으로 둘 것. 상세·다음 시도 우선순위는 docs/walkforward-report.md."
     },
     {
       "id": "E1",
@@ -216,7 +253,9 @@
       "title": "페이퍼 트레이딩 러너 — 일일 캔들 갱신 → 신호 → 가상 체결 기록",
       "status": "pending",
       "requires_human": false,
-      "depends_on": ["D4"],
+      "depends_on": [
+        "D4"
+      ],
       "notes": "공개 klines만 사용하므로 거래소 계정·API 키 없이 동작한다. 하네스 회차에 얹어 매일 1틱씩."
     },
     {
@@ -225,7 +264,9 @@
       "title": "트랙레코드 대시보드 연동 (_site에 성과 섹션)",
       "status": "pending",
       "requires_human": false,
-      "depends_on": ["E1"],
+      "depends_on": [
+        "E1"
+      ],
       "notes": "모든 성과에 paper/live 라벨 표기 필수. 두 곡선을 하나로 합치지 않는다."
     },
     {
@@ -234,7 +275,9 @@
       "title": "페이퍼 트랙레코드 30일 축적 — 실거래 착수 게이트 판정",
       "status": "pending",
       "requires_human": false,
-      "depends_on": ["E2"],
+      "depends_on": [
+        "E2"
+      ],
       "notes": "게이트(확장 제안서 §4-1): 아웃오브샘플 플러스 수익 + 페이퍼 30일 무중단 + MDD 허용치 이내 + 손실 한도 코드화. 모두 통과해야 E4/E5로 넘어간다."
     },
     {
@@ -243,7 +286,9 @@
       "title": "바이낸스 계정 개설 + Read-only API 키 발급",
       "status": "pending",
       "requires_human": true,
-      "depends_on": ["E3"],
+      "depends_on": [
+        "E3"
+      ],
       "notes": "사람 작업. 게이트 통과 전에는 불필요하므로 E3 이후로 미뤄 둔다(지금의 최우선은 여전히 B1). Trade·Withdraw 스코프 키는 .env에 두지 않는다."
     },
     {
@@ -252,7 +297,10 @@
       "title": "소액 실거래 시드 입금 + 주문 집행",
       "status": "pending",
       "requires_human": true,
-      "depends_on": ["E3", "E4"],
+      "depends_on": [
+        "E3",
+        "E4"
+      ],
       "notes": "사람 작업 — 에이전트는 실주문을 내지 않는다(확장 제안서 §4-2 절대 규칙). 하네스는 신호 산출까지만. 시드는 잃어도 되는 금액으로."
     },
     {
@@ -261,7 +309,9 @@
       "title": "연재 2편 초안 (영문): 백테스트 엔진 제작기 + 정직성 규약",
       "status": "pending",
       "requires_human": false,
-      "depends_on": ["D4"],
+      "depends_on": [
+        "D4"
+      ],
       "notes": "랩 산출물을 그대로 홍보 콘텐츠로. 게시는 C3(계정) 이후 사람이 진행."
     },
     {
@@ -270,7 +320,9 @@
       "title": "랩 SaaS 사양서 — 제품 정의·가격·규제 경계 (docs/lab-saas.md)",
       "status": "pending",
       "requires_human": false,
-      "depends_on": ["D5"],
+      "depends_on": [
+        "D5"
+      ],
       "notes": "매매 신호 구독이 아닌 도구 판매로 확정(확장 제안서 §5-1). 제품 카피의 금지선을 사양서에 명시한다."
     },
     {
@@ -279,7 +331,9 @@
       "title": "랩 웹 UI — 파라미터 입력 → 백테스트 실행 → 리포트",
       "status": "pending",
       "requires_human": false,
-      "depends_on": ["F1"],
+      "depends_on": [
+        "F1"
+      ],
       "notes": "고객이 자기 전략을 돌려보는 형태. 무료 티어(제한 기간·심볼) → 유료 구독."
     },
     {
@@ -288,7 +342,10 @@
       "title": "구독 결제 연동 (B4 라이트닝 결제 페이지 재사용)",
       "status": "pending",
       "requires_human": false,
-      "depends_on": ["F2", "B4"],
+      "depends_on": [
+        "F2",
+        "B4"
+      ],
       "notes": "B4에 의존 — 지갑(B1)이 없으면 SaaS 매출도 수령할 수 없다. B1 해결의 경제적 동기가 여기서 커진다."
     }
   ]
