@@ -73,8 +73,9 @@ test('runBacktest: 수수료를 켜면 같은 신호의 성과가 반드시 나�
   const free = runBacktest({ ...args, ...FREE });
   const paid = runBacktest({ ...args, feeBps: 10, slippageBps: 0, initialEquity: 1000 });
   assert.ok(paid.finalEquity < free.finalEquity);
-  // 진입: 수수료 1 차감 후 999로 9.99주 · 청산: 9.99×120에서 0.1% 차감
-  near(paid.finalEquity, 9.99 * 120 * 0.999);
+  // 명목은 자기자본 전액(1000)으로 잡고 수수료는 잔고에서 차감한다(증거금 방식).
+  // 진입: 10주, 수수료 1 → 현금 -1 · 청산: 10×120에서 0.1%(1.2) 차감
+  near(paid.finalEquity, -1 + 1200 - 1.2);
 });
 
 test('runBacktest: 슬리피지는 매수가를 올리고 매도가를 내린다', () => {
@@ -114,12 +115,9 @@ test('runBacktest: 신호 길이가 캔들 수와 다르면 TypeError (정렬 �
   assert.throws(() => runBacktest({ candles: fixture(), targetPositions: [1, 0] }), TypeError);
 });
 
-test('runBacktest: 신호가 -1/0/1이 아닌 값이면 TypeError', () => {
-  assert.throws(
-    () => runBacktest({ candles: fixture(), targetPositions: [1, 0.5, 0, 0] }),
-    TypeError
-  );
+test('runBacktest: 신호가 수가 아니면 TypeError', () => {
   assert.throws(() => runBacktest({ candles: fixture(), targetPositions: [1, '1', 0, 0] }), TypeError);
+  assert.throws(() => runBacktest({ candles: fixture(), targetPositions: [1, null, 0, 0] }), TypeError);
 });
 
 test('runBacktest: 비용·초기자본이 음수/0이면 RangeError', () => {
@@ -291,4 +289,75 @@ test('runBacktest: 포지션이 없으면 펀딩과 무관하다', () => {
   ]);
   const on = runBacktest({ candles: c, targetPositions: [0, 0], ...FREE, fundingCost: true });
   near(on.finalEquity, 1000);
+});
+
+// ---- 연속 노출 (포지션 사이징) ----
+// 전량 진입/청산만 되면 포지션 사이징도 전략 포트폴리오도 시도할 수 없다.
+// targetPositions를 [-1, 1] 연속값으로 넓혀 "자기자본의 몇 %를 노출할지"를 표현한다.
+// 목표 노출이 바뀌면 **차액만** 거래한다 — 전량 청산 후 재진입으로 계산하면
+// 회전이 잦은 전략의 수수료가 실제의 두 배로 잡힌다.
+
+test('runBacktest: 0.5는 자기자본의 절반만 노출한다', () => {
+  const r = runBacktest({ candles: fixture(), targetPositions: [0.5, 0.5, 0.5, 0.5], ...FREE });
+  // c1 시가 100에 5주(=500 노출) → c1 종가 110에서 자산 1000 + 5×10 = 1050
+  near(r.equity[1], 1050);
+});
+
+test('runBacktest: 목표가 그대로면 거래가 일어나지 않는다', () => {
+  const flat = [
+    candle(0, 100, 100, 100, 100),
+    candle(3600000, 100, 100, 100, 100),
+    candle(7200000, 100, 100, 100, 100),
+  ];
+  const r = runBacktest({
+    candles: flat,
+    targetPositions: [1, 1, 1],
+    feeBps: 100,
+    slippageBps: 0,
+    initialEquity: 1000,
+  });
+  // 목표가 그대로면 재조정이 없다 — 수수료는 진입 1회분(명목 1000 × 1%)만
+  near(r.finalEquity, 990);
+});
+
+test('runBacktest: 노출을 늘리면 차액만큼만 거래한다', () => {
+  const flat = [
+    candle(0, 100, 100, 100, 100),
+    candle(3600000, 100, 100, 100, 100),
+    candle(7200000, 100, 100, 100, 100),
+  ];
+  // 0.5 진입(명목 500, 수수료 5) → 1.0으로 증액(차액 명목 ~500, 수수료 ~5)
+  const r = runBacktest({
+    candles: flat,
+    targetPositions: [0.5, 1, 1],
+    feeBps: 100,
+    slippageBps: 0,
+    initialEquity: 1000,
+  });
+  // 전량 청산 후 재진입이었다면 수수료가 더 나갔을 것이다
+  assert.ok(r.finalEquity > 989, `차액 거래여야 함: ${r.finalEquity}`);
+  assert.ok(r.finalEquity < 996);
+});
+
+test('runBacktest: 음수 소수는 부분 숏이다', () => {
+  const down = [
+    candle(0, 100, 100, 100, 100),
+    candle(3600000, 100, 100, 90, 90),
+    candle(7200000, 90, 90, 90, 90),
+  ];
+  const r = runBacktest({ candles: down, targetPositions: [-0.5, -0.5, -0.5], ...FREE });
+  // 절반 숏이므로 가격 -10%에서 자산 +5%
+  near(r.equity[1], 1050);
+});
+
+test('runBacktest: 노출이 [-1, 1]을 벗어나면 TypeError (레버리지는 범위 밖)', () => {
+  assert.throws(() => runBacktest({ candles: fixture(), targetPositions: [1.5, 0, 0, 0] }), TypeError);
+  assert.throws(() => runBacktest({ candles: fixture(), targetPositions: [-2, 0, 0, 0] }), TypeError);
+  assert.throws(() => runBacktest({ candles: fixture(), targetPositions: [NaN, 0, 0, 0] }), TypeError);
+});
+
+test('runBacktest: 부분 노출도 트레이드로 기록된다', () => {
+  const r = runBacktest({ candles: fixture(), targetPositions: [0.5, 0.5, 0, 0], ...FREE });
+  assert.equal(r.trades.length, 1);
+  assert.equal(r.trades[0].side, 'long');
 });
