@@ -339,12 +339,12 @@
       "id": "D14",
       "track": "D",
       "title": "포지셔닝 데이터 수집기 (OI·롱숏비율·테이커비율)",
-      "status": "pending",
+      "status": "done",
       "requires_human": false,
       "depends_on": [
         "D13"
       ],
-      "notes": "시급. 바이낸스 미결제약정·롱숏비율·테이커비율은 최근 30일치만 제공하고 그 이전 startTime은 거부된다(에러 -1130). 지금 수집을 시작하지 않으면 나중에도 과거를 만들 수 없다. paper-tick에 얹어 매 회차 누적할 것. 이 데이터는 다른 봇들이 어디에 몰려 있는가를 직접 알려주므로 역이용 계열의 최적 입력이다. 엔드포인트: /futures/data/openInterestHist, topLongShortPositionRatio, globalLongShortAccountRatio, takerlongshortRatio (period=5m)."
+      "notes": "2026-08-15 완료. src/positioning.js(테스트 14개) + scripts/collect-positioning.js(npm run collect-positioning) + harness/positioning.json. HARNESS.md 회차 절차 1.6에 등록 — 빠뜨리면 복구 불가능하므로 실패해도 조용히 넘어가지 않고 로그에 남긴다. 첫 수집: 3심볼 × 4지표 × 500관측(약 1.7일치) 확보, 매 회차 연장된다. 병합은 타임스탬프 기준 덮어쓰기 + 정렬 강제 — 회차가 겹치면 같은 관측이 다시 들어오는데 중복이나 역행이 섞이면 소급 재수집이 불가능해 영구 오염된다. 테이커 물량은 0이 정상값(거래 없던 구간)이지만 비율은 양수여야 해 검사를 분리했다."
     },
     {
       "id": "E1",
@@ -355,7 +355,7 @@
       "depends_on": [
         "D4"
       ],
-      "notes": "2026-08-15 완료. src/paper.js(테스트 13개) + scripts/paper-tick.js(npm run paper-tick) + harness/paper.json. 게이트 통과 전략이 없으므로 하나를 굴리는 대신 후보 4종(매수보유 기준선 + emaCross·donchian·funding)을 같은 캔들 위에서 동시에 굴리는 아레나 형태 — 나중에 쓸 만한 전략이 나왔을 때 비교할 대조군은 소급해서 만들 수 없기 때문. 매 틱 전체 재계산(증분 상태는 재실행에서 어긋남), 닫힌 봉만 사용(진행 중인 봉 종가는 나중에 바뀌므로 사실상 룩어헤드), equityFromIndex로 워밍업과 성과 구간 분리. HARNESS.md 회차 절차 1.5에 등록해 매일 1틱씩 쌓인다. 2026-08-15 확장(v2): 단일 심볼 성과가 일반화되지 않는다는 워크포워드 결론에 맞춰 아레나를 다심볼(BTC/ETH/SOL 4h)·전략 10종으로 확대. summarizeArena가 심볼 가로지르기 집계를 담당하며, 평균만이 아니라 최악 심볼·플러스 심볼 수·최대 낙폭을 함께 낸다(평균은 한 심볼의 대박이 나머지를 가린다). 한 심볼이 실패해도 나머지는 기록한다."
+      "notes": "2026-08-15 완료. src/paper.js(테스트 13개) + scripts/paper-tick.js(npm run paper-tick) + harness/paper.json. 게이트 통과 전략이 없으므로 하나를 굴리는 대신 후보 4종(매수보유 기준선 + emaCross·donchian·funding)을 같은 캔들 위에서 동시에 굴리는 아레나 형태 — 나중에 쓸 만한 전략이 나왔을 때 비교할 대조군은 소급해서 만들 수 없기 때문. 매 틱 전체 재계산(증분 상태는 재실행에서 어긋남), 닫힌 봉만 사용(진행 중인 봉 종가는 나중에 바뀌므로 사실상 룩어헤드), equityFromIndex로 워밍업과 성과 구간 분리. HARNESS.md 회차 절차 1.5에 등록해 매일 1틱씩 쌓인다. 2026-08-15 확장(v2): 단일 심볼 성과가 일반화되지 않는다는 워크포워드 결론에 맞춰 아레나를 다심볼(BTC/ETH/SOL 4h)·전략 10종으로 확대. summarizeArena가 심볼 가로지르기 집계를 담당하며, 평균만이 아니라 최악 심볼·플러스 심볼 수·최대 낙폭을 함께 낸다(평균은 한 심볼의 대박이 나머지를 가린다). 한 심볼이 실패해도 나머지는 기록한다. 2026-08-15 아레나 v3: 초단타 연구에 맞춰 5분봉·메이커 체결로 전환하고 후보를 liquidationFade 2설정 중심으로 교체. 5분봉에서 테이커는 봉당 움직임보다 비용이 커서 어떤 신호를 넣든 결과가 비용에 묻힌다."
     },
     {
       "id": "E2",
