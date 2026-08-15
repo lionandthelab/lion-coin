@@ -4,6 +4,14 @@
 // balance.js·fees.js와 같은 방침: 파싱·URL 조립은 순수 함수로 TDD하고, fetch는 얇은 래퍼로 둔다.
 
 const DEFAULT_BASE_URL = 'https://api.binance.com';
+
+// 현물과 선물은 엔드포인트도 심볼 집합도 다르다. 1000SHIB·1000PEPE처럼 배수 심볼은
+// 선물에만 있어 현물 API에서는 400이 난다. 그리고 펀딩·숏을 모델링하면서 현물
+// 가격으로 백테스트하는 것은 앞뒤가 맞지 않는다 — 실제로 체결되는 건 선물 가격이다.
+const MARKETS = {
+  spot: { baseUrl: 'https://api.binance.com', path: '/api/v3/klines' },
+  futures: { baseUrl: 'https://fapi.binance.com', path: '/fapi/v1/klines' },
+};
 const MAX_LIMIT = 1000; // 바이낸스 /api/v3/klines 1회 응답 상한
 
 // 바이낸스는 가격·거래량을 문자열로 보낸다. 숫자로 바꾸되, 해석 실패는 0으로 뭉개지 않는다.
@@ -87,8 +95,14 @@ function buildKlinesUrl({
   limit = MAX_LIMIT,
   startTime,
   endTime,
-  baseUrl = DEFAULT_BASE_URL,
+  market = 'spot',
+  baseUrl,
 } = {}) {
+  const spec = MARKETS[market];
+  if (!spec) {
+    throw new RangeError(`알 수 없는 market입니다: ${market} (지원: ${Object.keys(MARKETS).join(', ')})`);
+  }
+  const root = (baseUrl || spec.baseUrl).replace(/\/+$/, '');
   const sym = requireSymbolPart(symbol, 'symbol').toUpperCase();
   const iv = requireSymbolPart(interval, 'interval');
 
@@ -105,7 +119,7 @@ function buildKlinesUrl({
     params.push(`endTime=${toTimestamp(endTime, 'endTime', 0)}`);
   }
 
-  return `${baseUrl.replace(/\/+$/, '')}/api/v3/klines?${params.join('&')}`;
+  return `${root}${spec.path}?${params.join('&')}`;
 }
 
 const MINUTE = 60 * 1000;
@@ -149,13 +163,13 @@ async function fetchKlines(options) {
 // 1회 응답 상한(1000봉)을 넘는 구간을 여러 요청으로 이어 받는다.
 // 이어붙인 결과는 parseKlines의 검사를 통과한 페이지들이지만, 페이지 경계에서
 // 겹칠 수 있으므로 직전 마지막 openTime 이하인 봉은 버린다.
-async function fetchKlinesRange({ symbol, interval, startTime, endTime, baseUrl, onPage } = {}) {
+async function fetchKlinesRange({ symbol, interval, startTime, endTime, market, baseUrl, onPage } = {}) {
   const step = intervalToMs(interval);
   const all = [];
   let cursor = startTime;
 
   while (cursor <= endTime) {
-    const page = await fetchKlines({ symbol, interval, startTime: cursor, endTime, baseUrl });
+    const page = await fetchKlines({ symbol, interval, startTime: cursor, endTime, market, baseUrl });
     if (page.length === 0) break;
 
     const last = all.length > 0 ? all[all.length - 1].openTime : -Infinity;
@@ -175,6 +189,7 @@ async function fetchKlinesRange({ symbol, interval, startTime, endTime, baseUrl,
 
 module.exports = {
   DEFAULT_BASE_URL,
+  MARKETS,
   MAX_LIMIT,
   INTERVAL_MS,
   parseKlines,

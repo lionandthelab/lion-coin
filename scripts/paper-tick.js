@@ -29,6 +29,8 @@ async function tickSymbol(state, symbol, warmupStart, paperStart, now) {
     interval: state.interval,
     startTime: warmupStart,
     endTime: now,
+    // 아레나도 펀딩·메이커를 쓰므로 선물 가격이어야 한다.
+    market: 'futures',
   });
   if (priceOnly.length === 0) throw new Error(`${symbol}: 캔들을 받지 못했습니다`);
 

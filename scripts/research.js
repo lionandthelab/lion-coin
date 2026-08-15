@@ -150,7 +150,7 @@ const GRIDS = {
 };
 
 async function loadSymbol(symbol) {
-  const cache = path.join(DATA_DIR, `${symbol}-${INTERVAL}-${START}-f.json`);
+  const cache = path.join(DATA_DIR, `${symbol}-${INTERVAL}-${START}-fut.json`);
   if (fs.existsSync(cache)) {
     return JSON.parse(fs.readFileSync(cache, 'utf8'));
   }
@@ -158,7 +158,10 @@ async function loadSymbol(symbol) {
   const startTime = Date.parse(`${START}T00:00:00Z`);
   const endTime = Date.now();
   process.stdout.write(`  ${symbol} 캔들 수집...`);
-  const priceOnly = await fetchKlinesRange({ symbol, interval: INTERVAL, startTime, endTime });
+  // 펀딩·숏을 모델링하므로 가격도 선물이어야 한다. 1000SHIB 같은 배수 심볼은 선물에만 있다.
+  const priceOnly = await fetchKlinesRange({
+    symbol, interval: INTERVAL, startTime, endTime, market: 'futures',
+  });
   process.stdout.write(` ${priceOnly.length}봉 · 펀딩 수집...`);
   const rates = await fetchFundingRange({ symbol, startTime, endTime });
   console.log(` ${rates.length}건`);
@@ -262,8 +265,17 @@ async function main() {
   console.log('  ※ 폴드 수익률 평균이 아니라 아웃오브샘플 구간을 이어붙인 연속 곡선으로 평가한다.\n');
 
   const all = [];
+  const skipped = [];
   for (const symbol of SYMBOLS) {
-    const r = await runSymbol(symbol);
+    let r;
+    try {
+      r = await runSymbol(symbol);
+    } catch (err) {
+      // 심볼 하나가 죽어 캠페인 전체가 날아가면, 이미 받은 수십 분치 작업도 함께 사라진다.
+      skipped.push(`${symbol}: ${err.message}`);
+      console.log(`  ⚠ ${symbol} 건너뜀 — ${err.message}`);
+      continue;
+    }
     if (!r) continue;
     all.push(r);
 
@@ -290,6 +302,11 @@ async function main() {
   }
 
   console.log('\n\n═══ 종합 (이어붙인 워크포워드 곡선 기준) ═══\n');
+  if (skipped.length) {
+    // 조용히 빠지면 "N개 심볼에서 검증했다"는 서술이 틀리게 된다.
+    console.log(`  ⚠ 건너뛴 심볼 ${skipped.length}개: ${skipped.join(' · ')}\n`);
+  }
+  console.log(`  집계 심볼 ${all.length}/${SYMBOLS.length}개\n`);
   const names = Object.keys(GRIDS);
   console.log(`  ${'전략'.padEnd(18)}${'게이트'.padStart(9)}${'평균수익'.padStart(11)}${'중앙수익'.padStart(11)}${'평균MDD'.padStart(9)}${'평균WFE'.padStart(9)}`);
 
