@@ -328,12 +328,12 @@
       "id": "E2",
       "track": "E",
       "title": "트랙레코드 대시보드 연동 (_site에 성과 섹션)",
-      "status": "pending",
+      "status": "done",
       "requires_human": false,
       "depends_on": [
         "E1"
       ],
-      "notes": "모든 성과에 paper/live 라벨 표기 필수. 두 곡선을 하나로 합치지 않는다."
+      "notes": "2026-08-15 완료. harness/lib/site.js에 renderPaperSection·buildPaperModel 추가(테스트 6개), scripts/build-site.js가 harness/paper.json을 읽어 넘긴다. 공개 채널이므로 \"모의(paper)\" 배지·\"실거래가 아닙니다\" 경고·\"게이트 미통과\" 표기를 테스트로 강제 — 레이아웃을 손보다 경고가 빠지면 모의 수치가 실적으로 읽힌다. 평균과 함께 최악 심볼·플러스 심볼 수를 싣고 낙폭은 최악값을 쓴다(계좌가 실제로 견뎌야 하는 값). paper.json이 없으면 그 섹션만 빠지고 빌드는 계속된다."
     },
     {
       "id": "E3",
