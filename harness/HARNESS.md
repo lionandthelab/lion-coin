@@ -15,6 +15,10 @@
    - **실주문이 아니다.** 신호와 모의 체결까지만 계산하며, 실거래 집행은 사람이 한다.
    - 네트워크 오류로 실패하면 로그에 적고 그냥 넘어간다. 한 틱 빠지는 것보다 회차 전체가 멈추는 게 나쁘다.
    - 이 기록이 E3(페이퍼 30일 게이트)의 근거가 되므로, 매 회차 빠뜨리지 않는다.
+1.6. **포지셔닝 수집:** `npm run collect-positioning` 실행.
+   - **빠뜨리면 복구 불가능하다.** 바이낸스는 미결제약정·롱숏비율·테이커비율을 최근 30일치만 주고
+     그 이전 startTime은 거부한다(-1130). 캔들과 달리 나중에 소급해 받을 수 없다.
+   - 실패하면 로그에 반드시 남긴다. 조용히 넘어가면 영구 공백이 생긴 줄도 모른다.
 2. **상태 읽기:** `harness/state.json`을 읽는다. `node -e "const {pickNextTask}=require('./harness/lib/core');const s=require('./harness/state.json');const r=pickNextTask(s);console.log(JSON.stringify({task:r.task&&r.task.id,human:r.humanActions.map(t=>t.id)},null,2))"` 로 이번 회차 작업을 정한다.
 3. **작업 수행:** 선택된 작업 1개(작으면 최대 2개)를 완수한다. 시작 시 해당 task의 `status`를 `in_progress`로 저장해 두고, 완료 시 `done`으로 바꾼다. 회차 안에 못 끝내면 `in_progress`로 남기고 `notes`에 이어할 지점을 적는다.
    - `task: null`이고 사람 작업만 남았으면: 코드 작업 대신 사람 작업을 쉽게 만들 준비물(주소 생성, 가이드, 초안, 체크리스트)을 하나 만들어라. 그것도 없으면 로그만 쓴다.

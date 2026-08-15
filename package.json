@@ -9,7 +9,8 @@
     "verify-blink-key": "node --env-file-if-exists=.env scripts/verify-blink-key.js",
     "walkforward": "node scripts/walkforward.js",
     "paper-tick": "node scripts/paper-tick.js",
-    "research": "node scripts/research.js"
+    "research": "node scripts/research.js",
+    "collect-positioning": "node scripts/collect-positioning.js"
   },
   "dependencies": {
     "bip32": "^4.0.0",
