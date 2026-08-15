@@ -1,0 +1,97 @@
+{
+  "version": 1,
+  "label": "paper",
+  "note": "페이퍼 트레이딩 아레나. 모든 수치는 모의 체결이며 실거래가 아니다. 후보 전략은 전부 실거래 착수 게이트 미통과 상태이고(docs/walkforward-report.md), 여기서 굴리는 목적은 수익이 아니라 트랙레코드 인프라 검증과 대조군 축적이다.",
+  "symbol": "BTCUSDT",
+  "interval": "1h",
+  "warmupStart": "2026-05-01",
+  "paperStart": "2026-08-15",
+  "costs": {
+    "feeBps": 10,
+    "slippageBps": 5,
+    "initialEquity": 1000
+  },
+  "candidates": [
+    {
+      "id": "buyAndHold",
+      "strategy": null,
+      "params": {},
+      "note": "기준선. 어떤 전략도 이것을 못 이기면 의미가 없다."
+    },
+    {
+      "id": "emaCross-20-200",
+      "strategy": "emaCross",
+      "params": {
+        "fast": 20,
+        "slow": 200,
+        "atrStopMult": 3,
+        "dailyLossLimitPct": 5
+      },
+      "note": "1차 검증 최적값. 게이트 미통과(검증 평균 -1.18%). 손절은 격자에서 뺀 뒤 고정값으로 되살림."
+    },
+    {
+      "id": "donchian-10-50",
+      "strategy": "donchianBreakout",
+      "params": {
+        "entryLookback": 10,
+        "exitLookback": 50,
+        "atrStopMult": 3,
+        "dailyLossLimitPct": 5
+      },
+      "note": "1차 검증 최적값. 게이트 미통과(검증 평균 -7.41%)."
+    },
+    {
+      "id": "funding-90-30-80",
+      "strategy": "fundingReversion",
+      "params": {
+        "fundingLookback": 90,
+        "buyBelowPct": 30,
+        "sellAbovePct": 80,
+        "atrStopMult": 3,
+        "dailyLossLimitPct": 5
+      },
+      "note": "2차 검증. 게이트 미통과지만 학습-검증 괴리가 32%p로 가장 작고 MDD도 가장 낮다."
+    }
+  ],
+  "lastTickAt": "2026-08-15T08:45:55.564Z",
+  "history": [
+    {
+      "candleOpenTime": 1786777200000,
+      "close": 63075.43,
+      "rows": [
+        {
+          "id": "buyAndHold",
+          "position": 1,
+          "equity": 999.3807,
+          "totalReturnPct": -0.0619,
+          "maxDrawdownPct": 0.1317,
+          "tradeCount": 0
+        },
+        {
+          "id": "emaCross-20-200",
+          "position": 0,
+          "equity": 1000,
+          "totalReturnPct": 0,
+          "maxDrawdownPct": 0,
+          "tradeCount": 0
+        },
+        {
+          "id": "donchian-10-50",
+          "position": 0,
+          "equity": 1000,
+          "totalReturnPct": 0,
+          "maxDrawdownPct": 0,
+          "tradeCount": 0
+        },
+        {
+          "id": "funding-90-30-80",
+          "position": 1,
+          "equity": 999.3807,
+          "totalReturnPct": -0.0619,
+          "maxDrawdownPct": 0.1317,
+          "tradeCount": 0
+        }
+      ]
+    }
+  ]
+}
