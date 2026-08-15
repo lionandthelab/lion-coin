@@ -361,3 +361,114 @@ test('runBacktest: 부분 노출도 트레이드로 기록된다', () => {
   assert.equal(r.trades.length, 1);
   assert.equal(r.trades[0].side, 'long');
 });
+
+// ---- 메이커/테이커 체결 (초단타의 전제) ----
+// 초단타는 봉당 움직임이 왕복 비용보다 작아 테이커로는 구조적으로 불가능하다
+// (BTC 1분봉 중앙 1.5bps vs 테이커 왕복 14bps). 메이커 지정가는 왕복 4bps로
+// 내려가지만 **체결이 보장되지 않는다** — 그 미체결 위험을 정직하게 모델링한다.
+
+function bar(openTime, open, high, low, close) {
+  return { openTime, open, high, low, close, volume: 1, closeTime: openTime + 59999 };
+}
+
+const MAKER = {
+  execution: 'maker',
+  makerFeeBps: 2,
+  takerFeeBps: 5,
+  makerOffsetBps: 20,
+  initialEquity: 1000,
+};
+
+test('runBacktest: 메이커 매수는 시가보다 낮게 걸리고 저가가 닿으면 체결된다', () => {
+  const c = [
+    bar(0, 100, 100, 100, 100),
+    bar(60000, 100, 101, 99, 100), // 저가 99 → 지정가 99.8에 닿음
+    bar(120000, 100, 101, 99, 100),
+  ];
+  const r = runBacktest({ candles: c, targetPositions: [1, 1, 1], ...MAKER });
+  assert.equal(r.trades.length, 0);
+  assert.equal(r.open.side, 'long');
+  near(r.open.entryPrice, 100 * (1 - 0.002), '시가 100 × (1 - 20bps)');
+});
+
+test('runBacktest: 저가가 지정가에 닿지 않으면 체결되지 않는다', () => {
+  const c = [
+    bar(0, 100, 100, 100, 100),
+    bar(60000, 100, 101, 99.9, 101), // 저가 99.9 > 지정가 99.8
+    bar(120000, 101, 101, 101, 101),
+  ];
+  const r = runBacktest({ candles: c, targetPositions: [1, 0, 0], ...MAKER });
+  assert.equal(r.open, null, '미체결이어야 함');
+  near(r.finalEquity, 1000, '거래가 없으니 자산 그대로');
+});
+
+test('runBacktest: 미체결이면 다음 봉에서 다시 시도한다', () => {
+  const c = [
+    bar(0, 100, 100, 100, 100),
+    bar(60000, 100, 101, 99.9, 101), // 미체결
+    bar(120000, 100, 101, 99, 100), // 체결
+  ];
+  const r = runBacktest({ candles: c, targetPositions: [1, 1, 1], ...MAKER });
+  assert.ok(r.open, '두 번째 시도에서 체결되어야 함');
+  assert.equal(r.open.entryIndex, 2);
+});
+
+test('runBacktest: 메이커 매도는 시가보다 높게 걸리고 고가가 닿아야 체결된다', () => {
+  const c = [
+    bar(0, 100, 100, 100, 100),
+    bar(60000, 100, 101, 99, 100), // 진입
+    bar(120000, 100, 100.1, 99, 99), // 고가 100.1 < 지정가 100.2 → 청산 미체결
+    bar(180000, 100, 101, 99, 100), // 고가 101 → 청산 체결
+  ];
+  const r = runBacktest({ candles: c, targetPositions: [1, 0, 0, 0], ...MAKER });
+  assert.equal(r.trades.length, 1);
+  assert.equal(r.trades[0].exitIndex, 3, '청산은 세 번째 봉에서');
+  near(r.trades[0].exitPrice, 100 * 1.002);
+});
+
+test('runBacktest: 메이커 수수료가 테이커보다 낮아 같은 신호의 성과가 낫다', () => {
+  const c = [
+    bar(0, 100, 100, 100, 100),
+    bar(60000, 100, 102, 98, 101),
+    bar(120000, 101, 103, 99, 102),
+    bar(180000, 102, 104, 100, 103),
+  ];
+  const taker = runBacktest({
+    candles: c,
+    targetPositions: [1, 1, 0, 0],
+    execution: 'taker',
+    takerFeeBps: 5,
+    slippageBps: 2,
+    initialEquity: 1000,
+  });
+  const maker = runBacktest({ candles: c, targetPositions: [1, 1, 0, 0], ...MAKER });
+  assert.ok(maker.finalEquity > taker.finalEquity, `maker ${maker.finalEquity} vs taker ${taker.finalEquity}`);
+});
+
+test('runBacktest: execution 기본값은 taker이며 기존 동작을 유지한다', () => {
+  const r = runBacktest({ candles: fixture(), targetPositions: [1, 1, 0, 0], ...FREE });
+  assert.deepEqual(r.equity, [1000, 1100, 1200, 1200]);
+});
+
+test('runBacktest: 알 수 없는 execution은 RangeError', () => {
+  assert.throws(
+    () => runBacktest({ candles: fixture(), targetPositions: [1, 1, 0, 0], execution: 'iceberg' }),
+    RangeError
+  );
+});
+
+test('runBacktest: 메이커 미체결 봉에서도 보유 중이면 펀딩은 정산된다', () => {
+  // 진입 후, 청산 지정가가 안 붙는 봉에서 펀딩 정산이 일어난다
+  const c = [
+    { openTime: 0, open: 100, high: 100, low: 100, close: 100, volume: 1, closeTime: 59999, funding: 0.001, fundingSettled: false },
+    { openTime: 60000, open: 100, high: 101, low: 99, close: 100, volume: 1, closeTime: 119999, funding: 0.001, fundingSettled: false },
+    // 청산 지정가(100.2)에 고가 100.1이 못 닿음 + 펀딩 정산 봉
+    { openTime: 120000, open: 100, high: 100.1, low: 99.5, close: 100, volume: 1, closeTime: 179999, funding: 0.001, fundingSettled: true },
+  ];
+  const withFund = runBacktest({ candles: c, targetPositions: [1, 0, 0], ...MAKER, fundingCost: true });
+  const without = runBacktest({ candles: c, targetPositions: [1, 0, 0], ...MAKER, fundingCost: false });
+  assert.ok(
+    withFund.finalEquity < without.finalEquity,
+    `미체결 봉에서도 펀딩이 나가야 함: ${withFund.finalEquity} vs ${without.finalEquity}`
+  );
+});
