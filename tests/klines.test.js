@@ -164,3 +164,35 @@ test('intervalToMs: 알 수 없는 간격은 TypeError (조용히 추측하지 �
   assert.throws(() => intervalToMs(''), TypeError);
   assert.throws(() => intervalToMs(60), TypeError);
 });
+
+// ---- 시장 구분 (현물 / 선물) ----
+// 펀딩 비용과 숏을 모델링하면서 현물 가격으로 백테스트하는 것은 앞뒤가 안 맞는다.
+// 게다가 1000SHIB·1000PEPE 같은 심볼은 선물에만 존재해 현물 API에서는 400이 난다.
+
+test('buildKlinesUrl: futures 시장은 fapi 엔드포인트를 쓴다', () => {
+  const url = buildKlinesUrl({ symbol: '1000SHIBUSDT', interval: '15m', market: 'futures' });
+  assert.ok(url.startsWith('https://fapi.binance.com/fapi/v1/klines?'), url);
+  assert.match(url, /symbol=1000SHIBUSDT/);
+});
+
+test('buildKlinesUrl: spot 시장은 기존 엔드포인트를 유지한다', () => {
+  const url = buildKlinesUrl({ symbol: 'BTCUSDT', interval: '1h', market: 'spot' });
+  assert.ok(url.startsWith('https://api.binance.com/api/v3/klines?'), url);
+});
+
+test('buildKlinesUrl: baseUrl을 직접 주면 그것이 우선한다', () => {
+  const url = buildKlinesUrl({
+    symbol: 'BTCUSDT',
+    interval: '1h',
+    market: 'futures',
+    baseUrl: 'https://example.com',
+  });
+  assert.ok(url.startsWith('https://example.com/fapi/v1/klines?'), url);
+});
+
+test('buildKlinesUrl: 알 수 없는 market은 RangeError', () => {
+  assert.throws(
+    () => buildKlinesUrl({ symbol: 'BTCUSDT', interval: '1h', market: 'margin' }),
+    RangeError
+  );
+});
