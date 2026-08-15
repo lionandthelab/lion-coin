@@ -12,6 +12,8 @@ const {
   volBreakout,
   fundingLS,
   ensemble,
+  volTarget,
+  portfolio,
   STRATEGIES,
 } = require('../src/strategies');
 
@@ -301,4 +303,101 @@ test('롱숏 전략도 공통 규약을 지킨다 (길이 일치, -1/0/1)', () =
     assert.equal(out.length, c.length, `${name}: 길이 불일치`);
     assert.ok(out.every((p) => p === -1 || p === 0 || p === 1), `${name}: 허용되지 않는 값`);
   }
+});
+
+// ---- 변동성 타겟팅 · 전략 포트폴리오 ----
+// 연속 노출이 열리면서 처음 시도할 수 있게 된 두 레버.
+// 신호를 바꾸는 게 아니라 "얼마나 실을지"를 바꾼다.
+
+test('volTarget: 변동성이 목표보다 크면 노출을 줄인다', () => {
+  // 변동이 큰 구간과 작은 구간을 이어 붙여 노출 크기를 비교
+  const calm = Array.from({ length: 60 }, (_, i) => 100 + (i % 2));
+  const wild = Array.from({ length: 60 }, (_, i) => 100 + (i % 2) * 20);
+  const out = volTarget(fromCloses([...calm, ...wild]), {
+    inner: 'always',
+    volLookback: 30,
+    targetVolPct: 20,
+    ...NO_GUARDS,
+  });
+  const calmExposure = Math.abs(out[55]);
+  const wildExposure = Math.abs(out[115]);
+  assert.ok(wildExposure < calmExposure, `변동 큰 구간 노출이 더 커짐: ${wildExposure} vs ${calmExposure}`);
+});
+
+test('volTarget: 노출은 1을 넘지 않는다 (레버리지 금지)', () => {
+  const flat = Array.from({ length: 80 }, () => 100.0);
+  const out = volTarget(fromCloses(flat), {
+    inner: 'always',
+    volLookback: 30,
+    targetVolPct: 500,
+    ...NO_GUARDS,
+  });
+  assert.ok(out.every((p) => Math.abs(p) <= 1), '노출이 1을 초과');
+});
+
+test('volTarget: 워밍업 구간은 0', () => {
+  const out = volTarget(fromCloses(Array.from({ length: 40 }, (_, i) => 100 + i)), {
+    inner: 'always',
+    volLookback: 30,
+    ...NO_GUARDS,
+  });
+  assert.equal(out[0], 0);
+  assert.equal(out[10], 0);
+});
+
+test('volTarget: 내부 전략이 현금이면 노출도 0', () => {
+  const out = volTarget(fromCloses(Array.from({ length: 80 }, (_, i) => 100 - i * 0.5)), {
+    inner: 'emaCross',
+    innerParams: { fast: 5, slow: 20 },
+    volLookback: 30,
+    ...NO_GUARDS,
+  });
+  // 단조 하락 + 롱온리 → 내부 신호가 0이므로 전부 0
+  assert.ok(out.every((p) => p === 0));
+});
+
+test('portfolio: 구성원 노출의 가중 평균을 낸다', () => {
+  const c = fromCloses(Array.from({ length: 60 }, (_, i) => 100 + i));
+  const out = portfolio(c, {
+    members: [
+      { strategy: 'always', params: {}, weight: 1 },
+      { strategy: 'never', params: {}, weight: 1 },
+    ],
+    ...NO_GUARDS,
+  });
+  // 하나는 항상 +1, 하나는 항상 0 → 평균 0.5
+  assert.ok(Math.abs(out[50] - 0.5) < 1e-9, `got ${out[50]}`);
+});
+
+test('portfolio: 가중치를 반영한다', () => {
+  const c = fromCloses(Array.from({ length: 60 }, (_, i) => 100 + i));
+  const out = portfolio(c, {
+    members: [
+      { strategy: 'always', params: {}, weight: 3 },
+      { strategy: 'never', params: {}, weight: 1 },
+    ],
+    ...NO_GUARDS,
+  });
+  assert.ok(Math.abs(out[50] - 0.75) < 1e-9, `got ${out[50]}`);
+});
+
+test('portfolio: 방향이 갈리면 서로 상쇄된다 (분산 효과)', () => {
+  const c = fromCloses(Array.from({ length: 60 }, (_, i) => 100 + i));
+  const out = portfolio(c, {
+    members: [
+      { strategy: 'always', params: {}, weight: 1 },
+      { strategy: 'always', params: { invert: true }, weight: 1 },
+    ],
+    ...NO_GUARDS,
+  });
+  assert.ok(out.every((p) => Math.abs(p) < 1e-9));
+});
+
+test('portfolio: 구성원이 없거나 가중치 합이 0이면 RangeError', () => {
+  const c = fromCloses([1, 2, 3]);
+  assert.throws(() => portfolio(c, { members: [] }), RangeError);
+  assert.throws(
+    () => portfolio(c, { members: [{ strategy: 'always', params: {}, weight: 0 }] }),
+    RangeError
+  );
 });
