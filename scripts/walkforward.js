@@ -13,6 +13,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { fetchKlinesRange } = require('../src/klines');
+const { fetchFundingRange, attachFunding } = require('../src/funding');
 const { runBacktest, summarize } = require('../src/backtest');
 const { STRATEGIES } = require('../src/strategies');
 
@@ -56,6 +57,28 @@ async function loadCandles() {
   return candles;
 }
 
+// 펀딩비는 선물 API(fapi)에서 따로 받아 캔들에 얹는다. 룩어헤드 차단은 attachFunding 책임.
+async function loadFunding(candles) {
+  const cache = path.join(DATA_DIR, `${SYMBOL}-funding-${START}.json`);
+  let rates;
+  if (fs.existsSync(cache)) {
+    rates = JSON.parse(fs.readFileSync(cache, 'utf8'));
+    console.log(`캐시에서 펀딩 ${rates.length}건 로드`);
+  } else {
+    process.stdout.write('바이낸스에서 펀딩비 수집 중...');
+    rates = await fetchFundingRange({
+      symbol: SYMBOL,
+      startTime: candles[0].openTime,
+      endTime: candles.at(-1).closeTime,
+      onPage: (n) => process.stdout.write(`\r바이낸스에서 펀딩비 수집 중... ${n}건`),
+    });
+    console.log('');
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+    fs.writeFileSync(cache, JSON.stringify(rates));
+  }
+  return attachFunding(candles, rates);
+}
+
 // 파라미터 그리드를 데카르트 곱으로 펼친다.
 function grid(spec) {
   return Object.entries(spec).reduce(
@@ -85,6 +108,16 @@ const GRIDS = {
     exitLookback: [5, 10, 20, 50],
     atrStopMult: [null, 2, 3],
     dailyLossLimitPct: [null, 5],
+  }),
+
+  // 손절은 최적화 대상에서 뺐다. 앞선 검증에서 탐색이 세 전략 모두의 손절을
+  // 꺼버렸기 때문이다(docs/walkforward-report.md §3) — 고정 제약으로 둔다.
+  fundingReversion: grid({
+    fundingLookback: [30, 90, 180, 360],
+    buyBelowPct: [10, 20, 30, 40],
+    sellAbovePct: [60, 70, 80, 90],
+    atrStopMult: [3],
+    dailyLossLimitPct: [5],
   }),
 };
 
@@ -135,7 +168,8 @@ function bestOnTrain(name, params, train) {
 const mean = (xs) => xs.reduce((a, b) => a + b, 0) / xs.length;
 
 async function main() {
-  const candles = await loadCandles();
+  const priceOnly = await loadCandles();
+  const candles = await loadFunding(priceOnly);
   if (candles.length < 500) {
     throw new Error(`봉이 너무 적습니다 (${candles.length}) — 시작일을 앞당기세요`);
   }
