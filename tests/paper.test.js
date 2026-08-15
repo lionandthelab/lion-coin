@@ -1,7 +1,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 
-const { evaluateCandidates, mergeHistory, BUY_AND_HOLD } = require('../src/paper');
+const { evaluateCandidates, mergeHistory, summarizeArena, BUY_AND_HOLD } = require('../src/paper');
 
 const HOUR = 3600000;
 
@@ -133,4 +133,78 @@ test('evaluateCandidates: equityFromIndex가 범위를 벗어나면 RangeError',
     () => evaluateCandidates([{ id: 'bh', strategy: BUY_AND_HOLD }], c, COSTS, { equityFromIndex: 3 }),
     RangeError
   );
+});
+
+// ---- summarizeArena ----
+// 단일 심볼 성과가 일반화되지 않는다는 게 워크포워드 연구의 결론이었다.
+// 전방 검증도 같은 규율을 따라야 하므로, 후보를 여러 심볼에서 동시에 굴리고
+// 심볼을 가로질러 집계한다.
+
+function arenaState(seriesBySymbol) {
+  return {
+    symbols: Object.keys(seriesBySymbol),
+    candidates: [
+      { id: 'bh', strategy: BUY_AND_HOLD },
+      { id: 'x', strategy: 'emaCross' },
+    ],
+    series: Object.fromEntries(
+      Object.entries(seriesBySymbol).map(([sym, rows]) => [
+        sym,
+        { history: [{ candleOpenTime: 0, close: 1, rows }] },
+      ])
+    ),
+  };
+}
+
+test('summarizeArena: 후보별로 심볼을 가로질러 평균·중앙값을 낸다', () => {
+  const s = arenaState({
+    BTCUSDT: [
+      { id: 'bh', totalReturnPct: 10, maxDrawdownPct: 5, position: 1, tradeCount: 0 },
+      { id: 'x', totalReturnPct: 4, maxDrawdownPct: 2, position: 1, tradeCount: 1 },
+    ],
+    ETHUSDT: [
+      { id: 'bh', totalReturnPct: -2, maxDrawdownPct: 9, position: 1, tradeCount: 0 },
+      { id: 'x', totalReturnPct: 8, maxDrawdownPct: 3, position: 0, tradeCount: 2 },
+    ],
+  });
+  const out = summarizeArena(s);
+  const bh = out.find((r) => r.id === 'bh');
+  assert.equal(bh.symbolCount, 2);
+  assert.equal(bh.meanReturnPct, 4);
+  assert.equal(bh.worstReturnPct, -2);
+  assert.equal(bh.positiveSymbols, 1);
+
+  const x = out.find((r) => r.id === 'x');
+  assert.equal(x.meanReturnPct, 6);
+  assert.equal(x.positiveSymbols, 2);
+  assert.equal(x.maxDrawdownPct, 3, '최악 낙폭을 대표값으로 쓴다');
+});
+
+test('summarizeArena: 아직 기록이 없는 심볼은 집계에서 빠진다', () => {
+  const s = arenaState({
+    BTCUSDT: [{ id: 'bh', totalReturnPct: 10, maxDrawdownPct: 1, position: 1, tradeCount: 0 }],
+  });
+  s.symbols.push('SOLUSDT');
+  s.series.SOLUSDT = { history: [] };
+  const out = summarizeArena(s);
+  assert.equal(out.find((r) => r.id === 'bh').symbolCount, 1);
+});
+
+test('summarizeArena: 기록이 전혀 없으면 지표는 null (0으로 위장하지 않는다)', () => {
+  const s = arenaState({});
+  s.symbols = ['BTCUSDT'];
+  s.series = { BTCUSDT: { history: [] } };
+  const out = summarizeArena(s);
+  assert.equal(out.find((r) => r.id === 'bh').meanReturnPct, null);
+  assert.equal(out.find((r) => r.id === 'bh').symbolCount, 0);
+});
+
+test('summarizeArena: 후보 순서는 설정 순서를 따른다', () => {
+  const s = arenaState({
+    BTCUSDT: [
+      { id: 'bh', totalReturnPct: 1, maxDrawdownPct: 1, position: 1, tradeCount: 0 },
+      { id: 'x', totalReturnPct: 2, maxDrawdownPct: 1, position: 1, tradeCount: 0 },
+    ],
+  });
+  assert.deepEqual(summarizeArena(s).map((r) => r.id), ['bh', 'x']);
 });
