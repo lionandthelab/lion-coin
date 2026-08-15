@@ -1,18 +1,21 @@
 {
-  "version": 2,
+  "version": 3,
   "label": "paper",
-  "note": "페이퍼 트레이딩 아레나 — 모든 수치는 모의 체결이며 실거래가 아니다. 여기 올라온 후보는 전부 워크포워드 게이트 미통과이며, emaCross·emaCrossLS·volBreakout은 각각 새 심볼군 확인 라운드에서 사전 등록 가설로 기각된 이력이 있다 (docs/research-campaign.md, docs/walkforward-evaluation.md). 그럼에도 굴리는 이유는 과거 데이터를 여러 번 들여다본 이상 남은 검증이 미래 데이터뿐이기 때문이다. 단일 심볼 성과가 일반화되지 않는다는 것이 연구 결론이므로 3심볼에서 동시에 굴리고, 평균만이 아니라 최악 심볼과 플러스 심볼 수를 함께 본다.",
+  "note": "페이퍼 트레이딩 아레나 — 모든 수치는 모의 체결이며 실거래가 아니다. 초단타 연구(docs/hft-research.md)에 맞춰 5분봉·메이커 체결로 전환했다. liquidationFade는 비용 0 기준 3심볼 6개 조합 전부 플러스였던 유일한 신호지만, 거래당 엣지(3~4bps)가 거래당 비용(6~7bps)보다 작아 순익은 마이너스였다. 여기서 굴리는 목적은 그 결론이 미래 데이터에서도 유지되는지 보는 것이다.",
   "symbols": [
     "BTCUSDT",
     "ETHUSDT",
     "SOLUSDT"
   ],
-  "interval": "4h",
-  "warmupStart": "2025-06-01",
+  "interval": "5m",
+  "warmupStart": "2026-08-08",
   "paperStart": "2026-08-15",
   "costs": {
-    "feeBps": 10,
-    "slippageBps": 5,
+    "execution": "maker",
+    "makerFeeBps": 2,
+    "makerOffsetBps": 2,
+    "takerFeeBps": 5,
+    "slippageBps": 2,
     "initialEquity": 1000,
     "fundingCost": true
   },
@@ -24,58 +27,41 @@
       "note": "기준선. 어떤 전략도 이것을 못 이기면 의미가 없다."
     },
     {
-      "id": "emaCross",
-      "strategy": "emaCross",
+      "id": "liquidationFade-v8",
+      "strategy": "liquidationFade",
       "params": {
-        "fast": 20,
-        "slow": 100,
+        "lookback": 100,
+        "volMult": 8,
+        "rangeMult": 3,
+        "holdBars": 6,
         "atrStopMult": 3,
         "dailyLossLimitPct": 5
       },
-      "note": "추세 롱온리. 2라운드 확인 시험에서 기각(1/6)."
+      "note": "최고 후보. 비용 0에서 BTC +7.4% / ETH +10.4% / SOL +14.2%, 거래당 엣지 3.3bps. 메이커 순익은 -7~-18%."
     },
     {
-      "id": "emaCrossLS",
-      "strategy": "emaCrossLS",
+      "id": "liquidationFade-v20",
+      "strategy": "liquidationFade",
       "params": {
-        "fast": 20,
-        "slow": 100,
+        "lookback": 100,
+        "volMult": 20,
+        "rangeMult": 3,
+        "holdBars": 24,
         "atrStopMult": 3,
         "dailyLossLimitPct": 5
       },
-      "note": "추세 롱숏. 3라운드 확인 시험에서 기각(2/6). 워크포워드 1d 평균 최상위였으나 MDD 64~70%."
+      "note": "최고 선별도. 거래 수가 가장 적어 비용 드래그가 최소(메이커 순익 중앙 -1.6%) — 손익분기에 가장 가깝다."
     },
     {
-      "id": "donchianBreakout",
-      "strategy": "donchianBreakout",
+      "id": "stopRunReversal",
+      "strategy": "stopRunReversal",
       "params": {
-        "entryLookback": 20,
-        "exitLookback": 10,
+        "lookback": 24,
+        "holdBars": 3,
         "atrStopMult": 3,
         "dailyLossLimitPct": 5
       },
-      "note": "돌파 롱온리."
-    },
-    {
-      "id": "donchianLS",
-      "strategy": "donchianLS",
-      "params": {
-        "entryLookback": 20,
-        "exitLookback": 10,
-        "atrStopMult": 3,
-        "dailyLossLimitPct": 5
-      },
-      "note": "돌파 롱숏. 워크포워드 전 구간 최하위권."
-    },
-    {
-      "id": "tsMomentum",
-      "strategy": "tsMomentum",
-      "params": {
-        "lookback": 96,
-        "atrStopMult": 3,
-        "dailyLossLimitPct": 5
-      },
-      "note": "시계열 모멘텀. 학계에서 가장 오래 살아남은 이례현상."
+      "note": "스탑 클러스터 되받기. 5분봉 워크포워드에서 -55.95%로 최하위권이었다."
     },
     {
       "id": "volBreakout",
@@ -86,92 +72,46 @@
         "atrStopMult": 3,
         "dailyLossLimitPct": 5
       },
-      "note": "변동성 돌파. MDD가 유일하게 24%대로 낮았으나 확인 라운드에서 0/9 기각."
+      "note": "변동성 돌파. MDD가 일관되게 가장 낮았으나 확인 라운드에서 0/9 기각."
     },
     {
-      "id": "rsiReversion",
-      "strategy": "rsiReversion",
+      "id": "emaCrossLS",
+      "strategy": "emaCrossLS",
       "params": {
-        "rsiPeriod": 14,
-        "buyBelow": 30,
-        "sellAbove": 70,
+        "fast": 20,
+        "slow": 100,
         "atrStopMult": 3,
         "dailyLossLimitPct": 5
       },
-      "note": "RSI 역추세."
-    },
-    {
-      "id": "fundingReversion",
-      "strategy": "fundingReversion",
-      "params": {
-        "fundingLookback": 90,
-        "buyBelowPct": 30,
-        "sellAbovePct": 80,
-        "atrStopMult": 3,
-        "dailyLossLimitPct": 5
-      },
-      "note": "펀딩 역발상 롱온리. 비가격 신호."
-    },
-    {
-      "id": "fundingLS",
-      "strategy": "fundingLS",
-      "params": {
-        "fundingLookback": 90,
-        "buyBelowPct": 30,
-        "sellAbovePct": 80,
-        "atrStopMult": 3,
-        "dailyLossLimitPct": 5
-      },
-      "note": "펀딩 역발상 롱숏."
-    },
-    {
-      "id": "ensemble",
-      "strategy": "ensemble",
-      "params": {
-        "threshold": 2,
-        "members": [
-          {
-            "strategy": "emaCrossLS",
-            "params": {
-              "fast": 20,
-              "slow": 100
-            }
-          },
-          {
-            "strategy": "tsMomentum",
-            "params": {
-              "lookback": 96
-            }
-          },
-          {
-            "strategy": "volBreakout",
-            "params": {}
-          }
-        ],
-        "atrStopMult": 3,
-        "dailyLossLimitPct": 5
-      },
-      "note": "3인 다수결 앙상블."
+      "note": "추세 롱숏 대조군. 3라운드 확인 시험에서 기각(2/6)."
     }
   ],
-  "lastTickAt": "2026-08-15T10:46:51.792Z",
+  "lastTickAt": "2026-08-15T13:15:19.647Z",
   "series": {
     "BTCUSDT": {
       "history": [
         {
-          "candleOpenTime": 1786766400000,
-          "close": 63075.43,
+          "candleOpenTime": 1786799400000,
+          "close": 63073.14,
           "rows": [
             {
               "id": "buyAndHold",
               "position": 1,
-              "equity": 998.8837,
-              "totalReturnPct": -0.1116,
-              "maxDrawdownPct": 0.1116,
+              "equity": 1000.6817,
+              "totalReturnPct": 0.0682,
+              "maxDrawdownPct": 0.3739,
               "tradeCount": 0
             },
             {
-              "id": "emaCross",
+              "id": "liquidationFade-v8",
+              "position": 0,
+              "equity": 1000.2534,
+              "totalReturnPct": 0.0253,
+              "maxDrawdownPct": 0.0158,
+              "tradeCount": 1
+            },
+            {
+              "id": "liquidationFade-v20",
               "position": 0,
               "equity": 1000,
               "totalReturnPct": 0,
@@ -179,76 +119,28 @@
               "tradeCount": 0
             },
             {
-              "id": "emaCrossLS",
-              "position": -1,
-              "equity": 998.1161,
-              "totalReturnPct": -0.1884,
-              "maxDrawdownPct": 0.1884,
-              "tradeCount": 0
-            },
-            {
-              "id": "donchianBreakout",
+              "id": "stopRunReversal",
               "position": 0,
-              "equity": 1000,
-              "totalReturnPct": 0,
-              "maxDrawdownPct": 0,
-              "tradeCount": 0
-            },
-            {
-              "id": "donchianLS",
-              "position": -1,
-              "equity": 998.1161,
-              "totalReturnPct": -0.1884,
-              "maxDrawdownPct": 0.1884,
-              "tradeCount": 0
-            },
-            {
-              "id": "tsMomentum",
-              "position": -1,
-              "equity": 998.1161,
-              "totalReturnPct": -0.1884,
-              "maxDrawdownPct": 0.1884,
-              "tradeCount": 0
+              "equity": 997.0381,
+              "totalReturnPct": -0.2962,
+              "maxDrawdownPct": 0.2962,
+              "tradeCount": 5
             },
             {
               "id": "volBreakout",
               "position": 0,
-              "equity": 1000,
-              "totalReturnPct": 0,
-              "maxDrawdownPct": 0,
-              "tradeCount": 0
+              "equity": 999.1724,
+              "totalReturnPct": -0.0828,
+              "maxDrawdownPct": 0.0951,
+              "tradeCount": 3
             },
             {
-              "id": "rsiReversion",
+              "id": "emaCrossLS",
               "position": 0,
-              "equity": 1000,
-              "totalReturnPct": 0,
-              "maxDrawdownPct": 0,
-              "tradeCount": 0
-            },
-            {
-              "id": "fundingReversion",
-              "position": 1,
-              "equity": 998.8837,
-              "totalReturnPct": -0.1116,
-              "maxDrawdownPct": 0.1116,
-              "tradeCount": 0
-            },
-            {
-              "id": "fundingLS",
-              "position": 1,
-              "equity": 998.8837,
-              "totalReturnPct": -0.1116,
-              "maxDrawdownPct": 0.1116,
-              "tradeCount": 0
-            },
-            {
-              "id": "ensemble",
-              "position": -1,
-              "equity": 998.1161,
-              "totalReturnPct": -0.1884,
-              "maxDrawdownPct": 0.1884,
-              "tradeCount": 0
+              "equity": 998.8951,
+              "totalReturnPct": -0.1105,
+              "maxDrawdownPct": 0.332,
+              "tradeCount": 2
             }
           ]
         }
@@ -257,19 +149,19 @@
     "ETHUSDT": {
       "history": [
         {
-          "candleOpenTime": 1786766400000,
-          "close": 1880.4,
+          "candleOpenTime": 1786799400000,
+          "close": 1884.12,
           "rows": [
             {
               "id": "buyAndHold",
               "position": 1,
-              "equity": 997.2862,
-              "totalReturnPct": -0.2714,
-              "maxDrawdownPct": 0.2714,
+              "equity": 1000.8065,
+              "totalReturnPct": 0.0806,
+              "maxDrawdownPct": 0.5108,
               "tradeCount": 0
             },
             {
-              "id": "emaCross",
+              "id": "liquidationFade-v8",
               "position": 0,
               "equity": 1000,
               "totalReturnPct": 0,
@@ -277,15 +169,7 @@
               "tradeCount": 0
             },
             {
-              "id": "emaCrossLS",
-              "position": -1,
-              "equity": 999.7167,
-              "totalReturnPct": -0.0283,
-              "maxDrawdownPct": 0.0283,
-              "tradeCount": 0
-            },
-            {
-              "id": "donchianBreakout",
+              "id": "liquidationFade-v20",
               "position": 0,
               "equity": 1000,
               "totalReturnPct": 0,
@@ -293,60 +177,28 @@
               "tradeCount": 0
             },
             {
-              "id": "donchianLS",
+              "id": "stopRunReversal",
               "position": -1,
-              "equity": 999.7167,
-              "totalReturnPct": -0.0283,
-              "maxDrawdownPct": 0.0283,
-              "tradeCount": 0
-            },
-            {
-              "id": "tsMomentum",
-              "position": -1,
-              "equity": 999.7167,
-              "totalReturnPct": -0.0283,
-              "maxDrawdownPct": 0.0283,
-              "tradeCount": 0
+              "equity": 1000.4536,
+              "totalReturnPct": 0.0454,
+              "maxDrawdownPct": 0.1879,
+              "tradeCount": 8
             },
             {
               "id": "volBreakout",
               "position": 0,
-              "equity": 1000,
-              "totalReturnPct": 0,
+              "equity": 1000.1168,
+              "totalReturnPct": 0.0117,
               "maxDrawdownPct": 0,
-              "tradeCount": 0
+              "tradeCount": 1
             },
             {
-              "id": "rsiReversion",
-              "position": 0,
-              "equity": 1000,
-              "totalReturnPct": 0,
-              "maxDrawdownPct": 0,
-              "tradeCount": 0
-            },
-            {
-              "id": "fundingReversion",
+              "id": "emaCrossLS",
               "position": 1,
-              "equity": 997.2862,
-              "totalReturnPct": -0.2714,
-              "maxDrawdownPct": 0.2714,
-              "tradeCount": 0
-            },
-            {
-              "id": "fundingLS",
-              "position": 1,
-              "equity": 997.2862,
-              "totalReturnPct": -0.2714,
-              "maxDrawdownPct": 0.2714,
-              "tradeCount": 0
-            },
-            {
-              "id": "ensemble",
-              "position": -1,
-              "equity": 999.7167,
-              "totalReturnPct": -0.0283,
-              "maxDrawdownPct": 0.0283,
-              "tradeCount": 0
+              "equity": 999.0381,
+              "totalReturnPct": -0.0962,
+              "maxDrawdownPct": 0.1593,
+              "tradeCount": 1
             }
           ]
         }
@@ -355,19 +207,27 @@
     "SOLUSDT": {
       "history": [
         {
-          "candleOpenTime": 1786766400000,
-          "close": 75.24,
+          "candleOpenTime": 1786799400000,
+          "close": 75.48,
           "rows": [
             {
               "id": "buyAndHold",
               "position": 1,
-              "equity": 996.2498,
-              "totalReturnPct": -0.375,
-              "maxDrawdownPct": 0.375,
+              "equity": 1000.9935,
+              "totalReturnPct": 0.0993,
+              "maxDrawdownPct": 0.8128,
               "tradeCount": 0
             },
             {
-              "id": "emaCross",
+              "id": "liquidationFade-v8",
+              "position": 0,
+              "equity": 999.7353,
+              "totalReturnPct": -0.0265,
+              "maxDrawdownPct": 0.0662,
+              "tradeCount": 1
+            },
+            {
+              "id": "liquidationFade-v20",
               "position": 0,
               "equity": 1000,
               "totalReturnPct": 0,
@@ -375,76 +235,28 @@
               "tradeCount": 0
             },
             {
-              "id": "emaCrossLS",
+              "id": "stopRunReversal",
               "position": 0,
-              "equity": 1000,
-              "totalReturnPct": 0,
-              "maxDrawdownPct": 0,
-              "tradeCount": 0
-            },
-            {
-              "id": "donchianBreakout",
-              "position": 0,
-              "equity": 1000,
-              "totalReturnPct": 0,
-              "maxDrawdownPct": 0,
-              "tradeCount": 0
-            },
-            {
-              "id": "donchianLS",
-              "position": -1,
-              "equity": 1000.7552,
-              "totalReturnPct": 0.0755,
-              "maxDrawdownPct": 0,
-              "tradeCount": 0
-            },
-            {
-              "id": "tsMomentum",
-              "position": 1,
-              "equity": 996.2498,
-              "totalReturnPct": -0.375,
-              "maxDrawdownPct": 0.375,
-              "tradeCount": 0
+              "equity": 997.6806,
+              "totalReturnPct": -0.2319,
+              "maxDrawdownPct": 0.3514,
+              "tradeCount": 6
             },
             {
               "id": "volBreakout",
               "position": 0,
-              "equity": 1000,
-              "totalReturnPct": 0,
-              "maxDrawdownPct": 0,
-              "tradeCount": 0
+              "equity": 1000.3979,
+              "totalReturnPct": 0.0398,
+              "maxDrawdownPct": 0.0662,
+              "tradeCount": 1
             },
             {
-              "id": "rsiReversion",
-              "position": 0,
-              "equity": 1000,
-              "totalReturnPct": 0,
-              "maxDrawdownPct": 0,
-              "tradeCount": 0
-            },
-            {
-              "id": "fundingReversion",
+              "id": "emaCrossLS",
               "position": 1,
-              "equity": 996.2498,
-              "totalReturnPct": -0.375,
-              "maxDrawdownPct": 0.375,
-              "tradeCount": 0
-            },
-            {
-              "id": "fundingLS",
-              "position": 1,
-              "equity": 996.2498,
-              "totalReturnPct": -0.375,
-              "maxDrawdownPct": 0.375,
-              "tradeCount": 0
-            },
-            {
-              "id": "ensemble",
-              "position": 1,
-              "equity": 996.2498,
-              "totalReturnPct": -0.375,
-              "maxDrawdownPct": 0.375,
-              "tradeCount": 0
+              "equity": 998.1385,
+              "totalReturnPct": -0.1861,
+              "maxDrawdownPct": 0.5687,
+              "tradeCount": 2
             }
           ]
         }
