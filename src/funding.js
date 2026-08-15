@@ -72,6 +72,13 @@ function alignFundingToCandles(candles, fundingRates) {
   return out;
 }
 
+// 전략 시그니처를 (candles, params)로 유지하기 위해 펀딩을 캔들에 얹는다.
+// 원본 배열은 건드리지 않는다 — 같은 캔들을 수백 개 파라미터 조합이 공유한다.
+function attachFunding(candles, fundingRates) {
+  const aligned = alignFundingToCandles(candles, fundingRates);
+  return candles.map((c, i) => ({ ...c, funding: aligned[i] }));
+}
+
 async function fetchFundingRates({ symbol, startTime, endTime, baseUrl = DEFAULT_BASE_URL } = {}) {
   const params = [`symbol=${String(symbol).toUpperCase()}`, `limit=${MAX_LIMIT}`];
   if (startTime !== undefined) params.push(`startTime=${startTime}`);
@@ -112,6 +119,7 @@ module.exports = {
   FUNDING_INTERVAL_MS,
   parseFundingRates,
   alignFundingToCandles,
+  attachFunding,
   fetchFundingRates,
   fetchFundingRange,
 };

@@ -126,4 +126,31 @@ function closes(candles) {
   return candles.map((c) => c.close);
 }
 
-module.exports = { sma, ema, rsi, atr, trueRanges, closes };
+// 최근 lookback개 중 현재 값이 몇 번째로 높은지를 0~100%로 돌려준다.
+//
+// 펀딩비처럼 절대 수준이 장세마다 달라지는 값은 고정 임계로 자를 수 없다.
+// 2023년의 "높은 펀딩"과 2026년의 "높은 펀딩"은 숫자가 다르다. 상대 순위로
+// 바꿔야 구간이 달라져도 같은 의미를 유지한다.
+//
+// 창에 null이 하나라도 있으면 그 지점은 null이다 — 표본이 모자란 순위는
+// 순위가 아니라 잡음이다.
+function rollingPercentileRank(values, lookback) {
+  if (!Array.isArray(values)) {
+    throw new TypeError('값 시계열은 배열이어야 합니다');
+  }
+  assertPeriod(lookback);
+
+  const out = new Array(values.length).fill(null);
+
+  for (let i = lookback - 1; i < values.length; i += 1) {
+    const window = values.slice(i - lookback + 1, i + 1);
+    if (window.some((v) => v == null || !Number.isFinite(v))) continue;
+    const current = values[i];
+    const atOrBelow = window.filter((v) => v <= current).length;
+    out[i] = (atOrBelow / window.length) * 100;
+  }
+
+  return out;
+}
+
+module.exports = { sma, ema, rsi, atr, trueRanges, closes, rollingPercentileRank };

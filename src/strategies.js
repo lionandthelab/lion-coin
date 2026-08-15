@@ -9,7 +9,7 @@
 // targetPositions[i]는 "i번 봉 종가까지의 정보로 낸 판단"이며, 체결은 백테스트
 // 엔진이 i+1번 봉 시가에 한다. 전략은 절대 candles[i] 이후를 읽지 않는다.
 
-const { ema, rsi, atr, closes } = require('./indicators');
+const { ema, rsi, atr, closes, rollingPercentileRank } = require('./indicators');
 const { applyRiskGuards } = require('./risk');
 
 const DEFAULT_GUARDS = { atrPeriod: 14, atrStopMult: 3, dailyLossLimitPct: 5 };
@@ -103,6 +103,45 @@ function donchianBreakout(candles, params = {}) {
   return guard(candles, raw, params);
 }
 
-const STRATEGIES = { emaCross, rsiReversion, donchianBreakout };
+// 펀딩비 역발상: 펀딩 백분위가 낮으면(롱이 몰리지 않았으면) 진입, 높으면(과열) 청산.
+//
+// 앞의 세 전략과 달리 신호가 가격에서 나오지 않는다. candles[i].funding은
+// funding.js의 attachFunding이 붙여 주며, 그 함수가 룩어헤드를 막는 책임을 진다.
+function fundingReversion(candles, params = {}) {
+  const { fundingLookback = 90, buyBelowPct = 30, sellAbovePct = 80 } = params;
+  assertPositiveInt(fundingLookback, 'fundingLookback');
+  if (!(buyBelowPct < sellAbovePct)) {
+    throw new RangeError(
+      `buyBelowPct(${buyBelowPct})는 sellAbovePct(${sellAbovePct})보다 작아야 합니다`
+    );
+  }
 
-module.exports = { emaCross, rsiReversion, donchianBreakout, STRATEGIES, DEFAULT_GUARDS };
+  const ranks = rollingPercentileRank(
+    candles.map((c) => (c.funding == null ? null : c.funding)),
+    fundingLookback
+  );
+
+  const raw = new Array(candles.length).fill(0);
+  let position = 0;
+
+  for (let i = 0; i < candles.length; i += 1) {
+    const rank = ranks[i];
+    if (rank != null) {
+      if (rank < buyBelowPct) position = 1;
+      else if (rank > sellAbovePct) position = 0;
+    }
+    raw[i] = position;
+  }
+  return guard(candles, raw, params);
+}
+
+const STRATEGIES = { emaCross, rsiReversion, donchianBreakout, fundingReversion };
+
+module.exports = {
+  emaCross,
+  rsiReversion,
+  donchianBreakout,
+  fundingReversion,
+  STRATEGIES,
+  DEFAULT_GUARDS,
+};
