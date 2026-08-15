@@ -12,6 +12,11 @@
 
 const MS_PER_DAY = 86400000;
 
+// 한 구간의 수익 배수. 숏은 가격이 내려야 이익이므로 분자·분모가 뒤집힌다.
+function legFactor(side, entryPrice, exitPrice) {
+  return side > 0 ? exitPrice / entryPrice : entryPrice / exitPrice;
+}
+
 function assertNonNegativeOrNull(value, name) {
   if (value === null || value === undefined) return;
   if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
@@ -42,10 +47,10 @@ function applyRiskGuards(
 
   const out = new Array(candles.length);
 
-  let inPosition = false;
+  let side = 0; // 1 = 롱, -1 = 숏, 0 = 현금
   let entryPrice = null;
-  let peakClose = null;
-  let stoppedOut = false; // 손절 직후 같은 신호로 즉시 재진입하는 것을 막는다
+  let extremeClose = null; // 롱이면 고점, 숏이면 저점
+  let stoppedSide = 0; // 손절 직후 같은 방향으로 즉시 재진입하는 것을 막는다
 
   let currentDay = null;
   let realizedDayFactor = 1; // 그날 청산된 구간들의 누적 수익 배수
@@ -63,24 +68,31 @@ function applyRiskGuards(
 
     let desired = rawPositions[i];
 
-    if (inPosition) {
-      peakClose = Math.max(peakClose, close);
+    if (side !== 0) {
+      // 롱은 고점을, 숏은 저점을 추적한다. 손절선도 방향에 따라 뒤집힌다.
+      extremeClose = side > 0 ? Math.max(extremeClose, close) : Math.min(extremeClose, close);
       const atrValue = atrSeries[i];
-      if (atrStopMult != null && atrValue != null && close <= peakClose - atrStopMult * atrValue) {
-        desired = 0;
-        stoppedOut = true;
+      if (atrStopMult != null && atrValue != null) {
+        const stopLine = extremeClose - side * atrStopMult * atrValue;
+        const hit = side > 0 ? close <= stopLine : close >= stopLine;
+        if (hit) {
+          stoppedSide = side;
+          // 손절은 "이 방향 포지션이 끝났다"는 뜻이다. 같은 봉에 반대 방향
+          // 신호가 나 있다면 그건 새 판단이므로 살린다.
+          desired = rawPositions[i] === -side ? rawPositions[i] : 0;
+        }
       }
     }
 
-    if (stoppedOut) {
-      // 원신호가 한 번 꺼져야 재진입을 허용한다.
-      if (rawPositions[i] === 0) stoppedOut = false;
-      desired = 0;
+    // 같은 방향으로의 재진입만 막는다. 반대 방향 신호는 새 판단이므로 허용한다.
+    if (stoppedSide !== 0) {
+      if (rawPositions[i] === stoppedSide) desired = 0;
+      else stoppedSide = 0;
     }
 
     // 미실현 손실까지 포함해 한도를 본다 — 청산될 때까지 기다리면 이미 늦다.
-    if (dailyLossLimitPct != null && !dayHalted && inPosition) {
-      const dayFactor = realizedDayFactor * (close / entryPrice);
+    if (dailyLossLimitPct != null && !dayHalted && side !== 0) {
+      const dayFactor = realizedDayFactor * legFactor(side, entryPrice, close);
       if ((dayFactor - 1) * 100 <= -dailyLossLimitPct) {
         desired = 0;
         dayHalted = true;
@@ -88,18 +100,20 @@ function applyRiskGuards(
     }
     if (dayHalted) desired = 0;
 
-    if (!inPosition && desired === 1) {
-      inPosition = true;
-      entryPrice = close;
-      peakClose = close;
-    } else if (inPosition && desired === 0) {
-      realizedDayFactor *= close / entryPrice;
-      inPosition = false;
+    if (side !== 0 && desired !== side) {
+      realizedDayFactor *= legFactor(side, entryPrice, close);
+      side = 0;
       entryPrice = null;
-      peakClose = null;
+      extremeClose = null;
       if (dailyLossLimitPct != null && (realizedDayFactor - 1) * 100 <= -dailyLossLimitPct) {
         dayHalted = true;
+        desired = 0;
       }
+    }
+    if (side === 0 && desired !== 0) {
+      side = desired;
+      entryPrice = close;
+      extremeClose = close;
     }
 
     out[i] = desired;

@@ -36,8 +36,8 @@ function validate(candles, targetPositions, feeBps, slippageBps, initialEquity) 
     );
   }
   targetPositions.forEach((p, i) => {
-    if (p !== 0 && p !== 1) {
-      throw new TypeError(`targetPositions[${i}]은 0 또는 1이어야 합니다: ${p}`);
+    if (p !== 0 && p !== 1 && p !== -1) {
+      throw new TypeError(`targetPositions[${i}]은 -1(숏)·0(현금)·1(롱) 중 하나여야 합니다: ${p}`);
     }
   });
   candles.forEach((c, i) => {
@@ -58,6 +58,7 @@ function runBacktest({
   feeBps = 10,
   slippageBps = 5,
   initialEquity = 1000,
+  fundingCost = false,
 } = {}) {
   validate(candles, targetPositions, feeBps, slippageBps, initialEquity);
 
@@ -65,7 +66,7 @@ function runBacktest({
   const slipRate = slippageBps / BPS;
 
   let cash = initialEquity;
-  let units = 0;
+  let units = 0; // 음수면 숏
   let open = null;
   const trades = [];
   const equity = [];
@@ -74,36 +75,61 @@ function runBacktest({
     // 직전 봉 종가에서 낸 판단을 이번 봉 시가에 체결한다.
     if (i > 0) {
       const desired = targetPositions[i - 1];
-      const held = units > 0 ? 1 : 0;
+      const held = Math.sign(units);
 
-      if (desired === 1 && held === 0) {
-        const fill = candles[i].open * (1 + slipRate);
-        const fee = cash * feeRate;
-        const spend = cash - fee;
-        open = {
-          entryIndex: i,
-          entryTime: candles[i].openTime,
-          entryPrice: fill,
-          entryEquity: cash,
-        };
-        units = spend / fill;
-        cash = 0;
-      } else if (desired === 0 && held === 1) {
-        const fill = candles[i].open * (1 - slipRate);
-        const gross = units * fill;
-        cash = gross - gross * feeRate;
-        units = 0;
-        trades.push({
-          ...open,
-          exitIndex: i,
-          exitTime: candles[i].openTime,
-          exitPrice: fill,
-          exitEquity: cash,
-          pnl: cash - open.entryEquity,
-          returnPct: ((cash - open.entryEquity) / open.entryEquity) * 100,
-        });
-        open = null;
+      if (desired !== held) {
+        // 방향을 뒤집을 때는 청산과 진입이 각각 일어나므로 수수료도 두 번 든다.
+        if (held !== 0) {
+          const fill = candles[i].open * (held > 0 ? 1 - slipRate : 1 + slipRate);
+          if (held > 0) {
+            const gross = units * fill;
+            cash += gross - gross * feeRate;
+          } else {
+            const cost = -units * fill;
+            cash -= cost + cost * feeRate;
+          }
+          units = 0;
+          trades.push({
+            ...open,
+            exitIndex: i,
+            exitTime: candles[i].openTime,
+            exitPrice: fill,
+            exitEquity: cash,
+            pnl: cash - open.entryEquity,
+            returnPct: ((cash - open.entryEquity) / open.entryEquity) * 100,
+          });
+          open = null;
+        }
+
+        if (desired !== 0) {
+          const equityNow = cash;
+          const fill = candles[i].open * (desired > 0 ? 1 + slipRate : 1 - slipRate);
+          const fee = equityNow * feeRate;
+          if (desired > 0) {
+            units = (equityNow - fee) / fill;
+            cash = 0;
+          } else {
+            // 숏: 명목을 자기자본만큼 잡아 매도하고, 매도 대금을 현금에 더한다.
+            const notional = equityNow;
+            units = -notional / fill;
+            cash = equityNow + notional - fee;
+          }
+          open = {
+            entryIndex: i,
+            entryTime: candles[i].openTime,
+            entryPrice: fill,
+            entryEquity: equityNow,
+            side: desired > 0 ? 'long' : 'short',
+          };
+        }
       }
+    }
+
+    // 무기한 선물은 8시간마다 펀딩을 주고받는다. 롱은 펀딩이 양수일 때 지불한다.
+    // 빼먹으면 장기 보유 전략의 성과가 실제보다 좋게 나온다.
+    if (fundingCost && units !== 0 && candles[i].fundingSettled && candles[i].funding != null) {
+      const notional = Math.abs(units) * candles[i].close;
+      cash -= Math.sign(units) * notional * candles[i].funding;
     }
 
     equity.push(cash + units * candles[i].close);

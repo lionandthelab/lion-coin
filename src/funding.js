@@ -52,21 +52,29 @@ function parseFundingRates(rows) {
 // 각 봉에는 **그 봉이 닫히기 전까지 정산된** 가장 최근 값만 넣는다. 봉 도중이나
 // 이후에 정산될 값을 미리 넣으면 그 순간 백테스트가 미래를 보게 된다.
 function alignFundingToCandles(candles, fundingRates) {
+  return alignFundingDetail(candles, fundingRates).map((d) => d.funding);
+}
+
+// 이어 쓴 값(funding)과 "이 봉에서 정산이 일어났는가"(settled)를 함께 돌려준다.
+// 백테스트가 펀딩 비용을 물릴 때 이어 쓴 값에 매 봉 과금하면 8배를 물린다.
+function alignFundingDetail(candles, fundingRates) {
   if (!Array.isArray(candles) || !Array.isArray(fundingRates)) {
     throw new TypeError('candles와 fundingRates는 배열이어야 합니다');
   }
 
-  const out = new Array(candles.length).fill(null);
+  const out = new Array(candles.length);
   let cursor = 0;
   let current = null;
 
   for (let i = 0; i < candles.length; i += 1) {
     const { closeTime } = candles[i];
+    let settled = false;
     while (cursor < fundingRates.length && fundingRates[cursor].fundingTime <= closeTime) {
       current = fundingRates[cursor].fundingRate;
       cursor += 1;
+      settled = true;
     }
-    out[i] = current;
+    out[i] = { funding: current, settled };
   }
 
   return out;
@@ -75,8 +83,12 @@ function alignFundingToCandles(candles, fundingRates) {
 // 전략 시그니처를 (candles, params)로 유지하기 위해 펀딩을 캔들에 얹는다.
 // 원본 배열은 건드리지 않는다 — 같은 캔들을 수백 개 파라미터 조합이 공유한다.
 function attachFunding(candles, fundingRates) {
-  const aligned = alignFundingToCandles(candles, fundingRates);
-  return candles.map((c, i) => ({ ...c, funding: aligned[i] }));
+  const detail = alignFundingDetail(candles, fundingRates);
+  return candles.map((c, i) => ({
+    ...c,
+    funding: detail[i].funding,
+    fundingSettled: detail[i].settled,
+  }));
 }
 
 async function fetchFundingRates({ symbol, startTime, endTime, baseUrl = DEFAULT_BASE_URL } = {}) {
@@ -119,6 +131,7 @@ module.exports = {
   FUNDING_INTERVAL_MS,
   parseFundingRates,
   alignFundingToCandles,
+  alignFundingDetail,
   attachFunding,
   fetchFundingRates,
   fetchFundingRange,
