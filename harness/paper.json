@@ -1,15 +1,16 @@
 {
   "version": 1,
   "label": "paper",
-  "note": "페이퍼 트레이딩 아레나. 모든 수치는 모의 체결이며 실거래가 아니다. 후보 전략은 전부 실거래 착수 게이트 미통과 상태이고(docs/walkforward-report.md), 여기서 굴리는 목적은 수익이 아니라 트랙레코드 인프라 검증과 대조군 축적이다.",
+  "note": "페이퍼 트레이딩 아레나. 모든 수치는 모의 체결이며 실거래가 아니다. 후보 전략은 전부 실거래 착수 게이트 미통과이며, 특히 emaCross·emaCrossLS는 다심볼 확인 시험에서 재현에 실패한 이력이 있다(docs/research-campaign.md §2). 그럼에도 여기서 굴리는 이유는, 과거 데이터를 여러 번 들여다본 이상 남은 정직한 검증이 미래 데이터뿐이기 때문이다. 시험 횟수를 늘리는 것이 아니라 아직 아무도 보지 않은 구간에 던지는 것이다.",
   "symbol": "BTCUSDT",
-  "interval": "1h",
-  "warmupStart": "2026-05-01",
+  "interval": "4h",
+  "warmupStart": "2025-06-01",
   "paperStart": "2026-08-15",
   "costs": {
     "feeBps": 10,
     "slippageBps": 5,
-    "initialEquity": 1000
+    "initialEquity": 1000,
+    "fundingCost": true
   },
   "candidates": [
     {
@@ -19,30 +20,40 @@
       "note": "기준선. 어떤 전략도 이것을 못 이기면 의미가 없다."
     },
     {
-      "id": "emaCross-20-200",
+      "id": "emaCrossLS-20-100",
+      "strategy": "emaCrossLS",
+      "params": {
+        "fast": 20,
+        "slow": 100,
+        "atrStopMult": 3,
+        "dailyLossLimitPct": 5
+      },
+      "note": "3차 캠페인 최상위(1d 4/9, 4h 3/6). 단, 3라운드 확인 시험에서 사전 등록 가설로 기각됨(2/6)."
+    },
+    {
+      "id": "emaCross-20-100",
       "strategy": "emaCross",
       "params": {
         "fast": 20,
-        "slow": 200,
+        "slow": 100,
         "atrStopMult": 3,
         "dailyLossLimitPct": 5
       },
-      "note": "1차 검증 최적값. 게이트 미통과(검증 평균 -1.18%). 손절은 격자에서 뺀 뒤 고정값으로 되살림."
+      "note": "1라운드 통과 후 2라운드 확인 시험에서 기각됨(1/6). 롱온리 대조군."
     },
     {
-      "id": "donchian-10-50",
-      "strategy": "donchianBreakout",
+      "id": "tsMomentum-96",
+      "strategy": "tsMomentum",
       "params": {
-        "entryLookback": 10,
-        "exitLookback": 50,
+        "lookback": 96,
         "atrStopMult": 3,
         "dailyLossLimitPct": 5
       },
-      "note": "1차 검증 최적값. 게이트 미통과(검증 평균 -7.41%)."
+      "note": "학계에서 가장 오래 살아남은 이례현상. 캠페인 성적은 심볼별 편차가 큼."
     },
     {
-      "id": "funding-90-30-80",
-      "strategy": "fundingReversion",
+      "id": "fundingLS-90",
+      "strategy": "fundingLS",
       "params": {
         "fundingLookback": 90,
         "buyBelowPct": 30,
@@ -50,25 +61,33 @@
         "atrStopMult": 3,
         "dailyLossLimitPct": 5
       },
-      "note": "2차 검증. 게이트 미통과지만 학습-검증 괴리가 32%p로 가장 작고 MDD도 가장 낮다."
+      "note": "비가격 신호 계열 대표. ETH에서만 통과했고 다른 심볼에서는 하위권."
     }
   ],
-  "lastTickAt": "2026-08-15T08:45:55.564Z",
+  "lastTickAt": "2026-08-15T09:01:43.622Z",
   "history": [
     {
-      "candleOpenTime": 1786777200000,
+      "candleOpenTime": 1786766400000,
       "close": 63075.43,
       "rows": [
         {
           "id": "buyAndHold",
           "position": 1,
-          "equity": 999.3807,
-          "totalReturnPct": -0.0619,
-          "maxDrawdownPct": 0.1317,
+          "equity": 998.8837,
+          "totalReturnPct": -0.1116,
+          "maxDrawdownPct": 0.1116,
           "tradeCount": 0
         },
         {
-          "id": "emaCross-20-200",
+          "id": "emaCrossLS-20-100",
+          "position": -1,
+          "equity": 998.1161,
+          "totalReturnPct": -0.1884,
+          "maxDrawdownPct": 0.1884,
+          "tradeCount": 0
+        },
+        {
+          "id": "emaCross-20-100",
           "position": 0,
           "equity": 1000,
           "totalReturnPct": 0,
@@ -76,19 +95,19 @@
           "tradeCount": 0
         },
         {
-          "id": "donchian-10-50",
-          "position": 0,
-          "equity": 1000,
-          "totalReturnPct": 0,
-          "maxDrawdownPct": 0,
+          "id": "tsMomentum-96",
+          "position": -1,
+          "equity": 998.1161,
+          "totalReturnPct": -0.1884,
+          "maxDrawdownPct": 0.1884,
           "tradeCount": 0
         },
         {
-          "id": "funding-90-30-80",
+          "id": "fundingLS-90",
           "position": 1,
-          "equity": 999.3807,
-          "totalReturnPct": -0.0619,
-          "maxDrawdownPct": 0.1317,
+          "equity": 998.8837,
+          "totalReturnPct": -0.1116,
+          "maxDrawdownPct": 0.1116,
           "tradeCount": 0
         }
       ]
