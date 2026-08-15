@@ -10,7 +10,8 @@
 //      따라서 마지막 봉의 판단은 체결 기회가 없어 버려진다.
 //   2. 비용 필수 — 수수료(bps)와 슬리피지(bps)를 진입·청산 양쪽에 적용한다.
 //
-// 포지션은 롱 온리 전량 진입/청산(0 또는 1)만 다룬다. 분할 매매는 아직 범위 밖이다.
+// 포지션은 [-1, 1] 연속 노출이다. 1이면 자기자본 전액 롱, -0.5면 절반 숏.
+// 레버리지(|노출| > 1)는 범위 밖 — 소액 실거래 전제에서 청산 위험을 들이지 않는다.
 
 const BPS = 10000;
 
@@ -36,8 +37,10 @@ function validate(candles, targetPositions, feeBps, slippageBps, initialEquity) 
     );
   }
   targetPositions.forEach((p, i) => {
-    if (p !== 0 && p !== 1 && p !== -1) {
-      throw new TypeError(`targetPositions[${i}]은 -1(숏)·0(현금)·1(롱) 중 하나여야 합니다: ${p}`);
+    if (typeof p !== 'number' || !Number.isFinite(p) || p < -1 || p > 1) {
+      throw new TypeError(
+        `targetPositions[${i}]은 -1(전량 숏)~1(전량 롱) 사이 수여야 합니다: ${p}`
+      );
     }
   });
   candles.forEach((c, i) => {
@@ -67,6 +70,9 @@ function runBacktest({
 
   let cash = initialEquity;
   let units = 0; // 음수면 숏
+  // 마지막으로 체결한 목표 노출. 자기자본이 움직일 때마다 재조정하면 목표가
+  // 그대로여도 매 봉 거래가 일어나 수수료만 나간다 — 목표가 바뀔 때만 거래한다.
+  let currentTarget = 0;
   let open = null;
   const trades = [];
   const equity = [];
@@ -75,51 +81,49 @@ function runBacktest({
     // 직전 봉 종가에서 낸 판단을 이번 봉 시가에 체결한다.
     if (i > 0) {
       const desired = targetPositions[i - 1];
-      const held = Math.sign(units);
+      const price = candles[i].open;
+      const equityAtOpen = cash + units * price;
 
-      if (desired !== held) {
-        // 방향을 뒤집을 때는 청산과 진입이 각각 일어나므로 수수료도 두 번 든다.
-        if (held !== 0) {
-          const fill = candles[i].open * (held > 0 ? 1 - slipRate : 1 + slipRate);
-          if (held > 0) {
-            const gross = units * fill;
-            cash += gross - gross * feeRate;
-          } else {
-            const cost = -units * fill;
-            cash -= cost + cost * feeRate;
-          }
-          units = 0;
+      // 목표 노출은 "자기자본의 몇 배"다. 방향을 먼저 정해야 슬리피지 부호가 정해지고,
+      // 그 체결가로 다시 목표 수량을 계산해야 노출이 정확히 desired가 된다.
+      const provisionalUnits = (desired * equityAtOpen) / price;
+      const dir = Math.sign(provisionalUnits - units);
+      const targetChanged = Math.abs(desired - currentTarget) > 1e-12;
+
+      if (dir !== 0 && targetChanged) {
+        const fill = price * (1 + dir * slipRate);
+        const targetUnits = (desired * equityAtOpen) / fill;
+        const delta = targetUnits - units;
+        const tradedNotional = Math.abs(delta) * fill;
+
+        const prevSide = Math.sign(units);
+        // 차액만 거래한다. 전량 청산 후 재진입으로 계산하면 회전이 잦은 전략의
+        // 수수료가 실제의 두 배로 잡힌다.
+        cash -= delta * fill + tradedNotional * feeRate;
+        units = targetUnits;
+        currentTarget = desired;
+        const newSide = Math.sign(units);
+
+        if (prevSide !== 0 && newSide !== prevSide) {
+          const exitEquity = cash + units * fill;
           trades.push({
             ...open,
             exitIndex: i,
             exitTime: candles[i].openTime,
             exitPrice: fill,
-            exitEquity: cash,
-            pnl: cash - open.entryEquity,
-            returnPct: ((cash - open.entryEquity) / open.entryEquity) * 100,
+            exitEquity,
+            pnl: exitEquity - open.entryEquity,
+            returnPct: ((exitEquity - open.entryEquity) / open.entryEquity) * 100,
           });
           open = null;
         }
-
-        if (desired !== 0) {
-          const equityNow = cash;
-          const fill = candles[i].open * (desired > 0 ? 1 + slipRate : 1 - slipRate);
-          const fee = equityNow * feeRate;
-          if (desired > 0) {
-            units = (equityNow - fee) / fill;
-            cash = 0;
-          } else {
-            // 숏: 명목을 자기자본만큼 잡아 매도하고, 매도 대금을 현금에 더한다.
-            const notional = equityNow;
-            units = -notional / fill;
-            cash = equityNow + notional - fee;
-          }
+        if (newSide !== 0 && newSide !== prevSide) {
           open = {
             entryIndex: i,
             entryTime: candles[i].openTime,
             entryPrice: fill,
-            entryEquity: equityNow,
-            side: desired > 0 ? 'long' : 'short',
+            entryEquity: equityAtOpen,
+            side: newSide > 0 ? 'long' : 'short',
           };
         }
       }
