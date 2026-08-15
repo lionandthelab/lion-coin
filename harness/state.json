@@ -73,22 +73,22 @@
     {
       "id": "B1",
       "track": "B",
-      "title": "라이트닝 지갑 개설 (Blink 앱 — 확정)",
+      "title": "라이트닝 지갑 개설 (Coinos — 2026-08-16 Blink에서 전환)",
       "status": "pending",
       "requires_human": true,
       "depends_on": [],
-      "notes": "사람 작업: Blink 앱 설치·가입. 커스터디얼은 소액 한정. 사용자 결정(2026-07-14): LNbits 데모 대신 Blink."
+      "notes": "2026-08-16 공급자 변경: Blink → Coinos. Blink가 한국 번호 온보딩을 막는 것이 확인됐다. 2026-07-14의 \"LNbits 대신 Blink\" 결정은 그때 알 수 없던 외부 제약에 걸린 것이므로 재검토가 정당하다. Coinos 선정 이유: 사용자명+비밀번호만으로 가입(전화번호·이메일·KYC 없음), 수신 무료, 한국어 지원, 오픈소스라 응답 형식을 추측하지 않고 소스(routes/users.ts의 me 핸들러 → user.balance, sats)에서 확인 가능. Alby Hub는 호스팅 노드라 유료 가능성이 있어 \"금전 비용 0원\" 원칙과 충돌해 제외. Alpaca는 미국 증권·암호화폐 브로커라 라이트닝 수신 자체가 없어 부적합. 사람 작업: coinos.io/register 가입 → coinos.io/docs에서 Auth Token 복사 → .env의 COINOS_TOKEN에 넣기. 주의: 이 토큰은 계정 전체 권한(출금 포함)이라 Blink의 Read 스코프 키보다 위험 — 커스터디얼 잔고는 소액만."
     },
     {
       "id": "B2",
       "track": "B",
-      "title": ".env에 BLINK_API_KEY 설정 (dashboard.blink.sv에서 Read 키 발급)",
+      "title": ".env에 COINOS_TOKEN 설정",
       "status": "pending",
       "requires_human": true,
       "depends_on": [
         "B1"
       ],
-      "notes": "2026-07-17: 키 입력됐으나 401 — ak_v2_ 접두사로 다른 서비스 키로 보임. 2026-07-21: 재확인 결과 여전히 동일한 ak_v2_ 키(79자), 미교체. Blink 공식 문서(dev.blink.sv/api/auth) 재확인해 blink_ 접두사가 맞음을 재확인, ACTION_REQUIRED.md에 정확한 발급 경로(좌측 메뉴 API Keys → + → Read+Receive 스코프)로 갱신. npm run check-goal이 configured:true면 완료. 2026-07-22~08-04: 글로벌 claude CLI 설치 손상으로 하네스 14회차 연속 미기동(코드 변경 없음). 2026-08-05 회차7 복구 후 재확인 — .env 키는 여전히 동일한 ak_v2_ 접두사, 미교체 상태 유지. 2026-08-05 회차8: check-goal의 401 왕복 없이 즉시 형식을 점검할 수 있도록 `npm run verify-blink-key` 추가(harness/lib/core.js의 validateBlinkKeyFormat, TDD). 실행 결과 여전히 ak_v2_ 접두사로 판정 — 값 자체는 미변경. 2026-08-06 회차9: `verify-blink-key` 재확인 결과 동일(ak_v2_, 미교체) — 반복 진단 지양 방침에 따라 신규 진단·도구 추가 없이 상태만 재확인, ACTION_REQUIRED.md는 변경 없이 유지(이미 정확함). 2026-08-08 회차10: check-goal(401)·verify-blink-key(ak_v2_) 재확인 결과 동일, 07-17부터 총 6회차 연속 미교체. task:null 상태에서 A3용 준비물(주소 생성)을 검토했으나 docs/SECURITY.md 3절('니모닉 단계는 에이전트가 관여하지 않음')과 상충해 보류 — 사람이 로컬에서 직접 생성하는 현재 절차 유지. 2026-08-09 회차11: check-goal(401)·verify-blink-key(ak_v2_) 재확인 결과 동일, 07-17부터 총 7회차 연속 미교체. 이번 회차는 반복 진단 대신 dev.blink.sv/api/auth 공식 문서를 3주 만에 재조회해 blink_ 접두사 요구사항이 그대로인지 확인 — 변경 없음, ACTION_REQUIRED.md의 안내가 여전히 정확함을 재검증. 2026-08-10 회차12: check-goal(401)·verify-blink-key(ak_v2_) 재확인 결과 동일, 07-17부터 총 8회차 연속 미교체. 이번 회차는 B1/B2 재진단 대신 B1에 의존한다고 잘못 알려져 있던 C3(Stacker News 계정 개설)를 B1 없이도 진행할 수 있는 경로(Nostr 로그인)를 찾아 사람 작업 착수 조건을 넓혔다. 2026-08-11 회차13: check-goal(401)·verify-blink-key(ak_v2_) 재확인 결과 동일, 07-17부터 총 9회차 연속 미교체. 반복 진단 지양 방침에 따라 이번 회차는 B1/B2가 아닌 A3(faucet) 준비물 보강에 집중 — mempool.space faucet 백업으로 coinfaucet.eu/en/btc-testnet4 를 조사·검증(hCaptcha, tb1q 주소 수용 확인)해 ACTION_REQUIRED.md에 추가. 2026-08-12 회차14: check-goal(401)·verify-blink-key(ak_v2_) 재확인 결과 동일, 07-17부터 총 10회차 연속 미교체 — 신규 진단 없이 확인만 하고, 이번 회차 작업은 A3 준비물(testnet4 balance 확인 URL) 보강에 집중. 2026-08-13 회차15: check-goal(401)·verify-blink-key(ak_v2_) 재확인 결과 동일, 07-17부터 총 11회차 연속 미교체. B1/A3/C3 개별 준비물은 이미 소진돼 반복 조사 대신 ACTION_REQUIRED.md 최상단에 우선순위 안내를 추가 — A3·C3는 목표 판정과 무관하거나 부분적일 뿐, B1→B2만이 실제 600 sats 수령으로 이어지는 유일한 경로임을 명시해 사람이 어디부터 손대야 할지 헷갈리지 않게 함. 2026-08-14 회차16: check-goal(401)·verify-blink-key(ak_v2_) 재확인 결과 동일, 07-17부터 총 12회차 연속 미교체. B1/A3/C3 준비물이 모두 소진된 상태이므로 이번 회차는 신규 진단·문서 변경 없이 재확인과 로그 기록만 진행. 2026-08-15 회차17: check-goal(401)·verify-blink-key(ak_v2_) 재확인 결과 동일, 07-17부터 총 13회차 연속 미교체(29일째). 반복 진단 대신 ACTION_REQUIRED.md 우선순위 안내 맨 위에 경과일수·연속 회차수를 명시해 사람이 체감할 긴급도를 높임(안내 내용 자체는 이미 정확해 변경 없음)."
+      "notes": "2026-08-16: Coinos로 전환하며 재설정. check-goal이 .env를 보고 공급자를 자동 판별하며 Coinos를 먼저 본다 (옛 BLINK_API_KEY가 남아 있어도 새 설정이 우선). npm run verify-wallet으로 네트워크 왕복 없이 형식만 즉시 확인 가능. npm run check-goal이 configured:true면 B1·B2 모두 완료. [이전 이력] 2026-07-17~08-16 한 달간 .env에 ak_v2_ 접두사의 다른 서비스 키가 들어 있어 401이 반복됐고, 그 원인이 실제로는 Blink 가입 자체가 불가능했던 것으로 밝혀졌다. 공급자 전환으로 해소."
     },
     {
       "id": "B3",
@@ -159,7 +159,7 @@
       "depends_on": [
         "B1"
       ],
-      "notes": "Blink 라이트닝 주소(LNURL-pay) 기반 — pay.blink.sv 링크 또는 Blink API로 인보이스 생성. 정적 페이지는 site/ 폴더."
+      "notes": "Coinos 라이트닝 주소(username@coinos.io) 또는 POST /api/invoice로 인보이스 생성. 정적 페이지는 site/ 폴더. (2026-08-16 Blink에서 전환)"
     },
     {
       "id": "B5",
