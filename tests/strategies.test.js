@@ -16,6 +16,7 @@ const {
   portfolio,
   stopRunReversal,
   liquidationFade,
+  regimeGate,
   STRATEGIES,
 } = require('../src/strategies');
 
@@ -494,5 +495,63 @@ test('봇 역이용 전략도 공통 규약을 지킨다', () => {
     const out = STRATEGIES[name](c, {});
     assert.equal(out.length, c.length, `${name}: 길이 불일치`);
     assert.ok(out.every((p) => p >= -1 && p <= 1), `${name}: 노출 범위 초과`);
+  }
+});
+
+// ---- 레짐 게이트 ----
+// liquidationFade는 "급락 = 일시적 강제 매도"를 가정한다. 구조적 하락장에서는
+// 그 가정이 거짓이라 되받는 롱이 떨어지는 칼을 잡는 일이 된다(docs/meme-universe.md §4).
+// 그래서 장기 추세와 **같은 방향**의 포지션만 통과시킨다.
+
+test('regimeGate: 상승 추세에서는 롱만 통과시킨다', () => {
+  const up = fromCloses(Array.from({ length: 80 }, (_, i) => 100 + i));
+  const long = regimeGate(up, { inner: 'always', trendLookback: 20, ...NO_GUARDS });
+  const short = regimeGate(up, { inner: 'always', innerParams: { invert: true }, trendLookback: 20, ...NO_GUARDS });
+  assert.equal(long[70], 1, '상승 추세 + 롱 → 통과');
+  assert.equal(short[70], 0, '상승 추세 + 숏 → 차단');
+});
+
+test('regimeGate: 하락 추세에서는 숏만 통과시킨다', () => {
+  const down = fromCloses(Array.from({ length: 80 }, (_, i) => 200 - i));
+  const long = regimeGate(down, { inner: 'always', trendLookback: 20, ...NO_GUARDS });
+  const short = regimeGate(down, { inner: 'always', innerParams: { invert: true }, trendLookback: 20, ...NO_GUARDS });
+  assert.equal(long[70], 0, '하락 추세 + 롱 → 차단');
+  assert.equal(short[70], -1, '하락 추세 + 숏 → 통과');
+});
+
+test('regimeGate: 추세 판정 워밍업 구간은 진입하지 않는다', () => {
+  const c = fromCloses(Array.from({ length: 40 }, (_, i) => 100 + i));
+  const out = regimeGate(c, { inner: 'always', trendLookback: 30, ...NO_GUARDS });
+  assert.equal(out[0], 0);
+  assert.equal(out[10], 0);
+});
+
+test('regimeGate: 부분 노출은 부호만 보고 판정하며 크기는 보존한다', () => {
+  const up = fromCloses(Array.from({ length: 80 }, (_, i) => 100 + i));
+  const out = regimeGate(up, {
+    inner: 'portfolio',
+    innerParams: { members: [{ strategy: 'always', weight: 1 }, { strategy: 'never', weight: 1 }] },
+    trendLookback: 20,
+    ...NO_GUARDS,
+  });
+  assert.ok(Math.abs(out[70] - 0.5) < 1e-9, `부분 노출 보존: ${out[70]}`);
+});
+
+test('regimeGate: 알 수 없는 내부 전략은 RangeError', () => {
+  assert.throws(() => regimeGate(fromCloses([1, 2, 3]), { inner: 'nope' }), RangeError);
+});
+
+test('regimeGate: 통과된 포지션은 내부 전략의 부분집합이다', () => {
+  const c = ohlcv(Array.from({ length: 200 }, (_, i) => {
+    const p = 100 - i * 0.3 + (i % 11) * 2;
+    return [p + 3, p - 3, p, 5 + (i % 9)];
+  }));
+  const inner = STRATEGIES.liquidationFade(c, NO_GUARDS);
+  const gated = regimeGate(c, { inner: 'liquidationFade', trendLookback: 50, ...NO_GUARDS });
+  for (let i = 0; i < c.length; i += 1) {
+    assert.ok(
+      gated[i] === 0 || gated[i] === inner[i],
+      `i=${i}: 게이트가 없던 포지션을 만들었다 (${inner[i]} → ${gated[i]})`
+    );
   }
 });
