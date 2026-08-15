@@ -272,12 +272,12 @@
       "id": "E1",
       "track": "E",
       "title": "페이퍼 트레이딩 러너 — 일일 캔들 갱신 → 신호 → 가상 체결 기록",
-      "status": "pending",
+      "status": "done",
       "requires_human": false,
       "depends_on": [
         "D4"
       ],
-      "notes": "공개 klines만 사용하므로 거래소 계정·API 키 없이 동작한다. 하네스 회차에 얹어 매일 1틱씩."
+      "notes": "2026-08-15 완료. src/paper.js(테스트 13개) + scripts/paper-tick.js(npm run paper-tick) + harness/paper.json. 게이트 통과 전략이 없으므로 하나를 굴리는 대신 후보 4종(매수보유 기준선 + emaCross·donchian·funding)을 같은 캔들 위에서 동시에 굴리는 아레나 형태 — 나중에 쓸 만한 전략이 나왔을 때 비교할 대조군은 소급해서 만들 수 없기 때문. 매 틱 전체 재계산(증분 상태는 재실행에서 어긋남), 닫힌 봉만 사용(진행 중인 봉 종가는 나중에 바뀌므로 사실상 룩어헤드), equityFromIndex로 워밍업과 성과 구간 분리. HARNESS.md 회차 절차 1.5에 등록해 매일 1틱씩 쌓인다."
     },
     {
       "id": "E2",
@@ -339,12 +339,12 @@
       "id": "F1",
       "track": "F",
       "title": "랩 SaaS 사양서 — 제품 정의·가격·규제 경계 (docs/lab-saas.md)",
-      "status": "pending",
+      "status": "done",
       "requires_human": false,
       "depends_on": [
         "D5"
       ],
-      "notes": "매매 신호 구독이 아닌 도구 판매로 확정(확장 제안서 §5-1). 제품 카피의 금지선을 사양서에 명시한다."
+      "notes": "2026-08-15 완료. docs/lab-saas.md — 제품은 백테스트 랩 툴(신호 구독 아님), 무료/유료 티어 경계, 가격안(Pro 월 10,000 sats 상당), 유사투자자문 회피를 위한 카피 금지선 명시. 핵심 판매 근거는 이 도구가 자사 전략 4종을 전부 죽였다는 사실 — walkforward-report.md를 제품 페이지에 그대로 공개한다. 결제는 B4 재사용이므로 F3는 B1에 간접 의존."
     },
     {
       "id": "F2",

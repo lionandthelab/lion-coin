@@ -11,6 +11,10 @@
 1. **목표 체크:** `npm run check-goal` 실행.
    - 결과 JSON의 `achieved`가 `true`면 → **최종 로그**를 쓰고(아래 형식), `harness/state.json`의 `goal.achieved`를 `true`로 저장 후 커밋하고 종료한다. 다음 회차부터 러너가 스케줄을 스스로 해제한다.
    - `configured: false`면 지갑 미연동 상태다. 그대로 다음 단계로 진행하되, 로그의 "사람이 할 일"에 B1/B2를 상기시킨다.
+1.5. **페이퍼 틱:** `npm run paper-tick` 실행. 후보 전략들의 모의 성과를 하루치 갱신해 `harness/paper.json`에 기록한다.
+   - **실주문이 아니다.** 신호와 모의 체결까지만 계산하며, 실거래 집행은 사람이 한다.
+   - 네트워크 오류로 실패하면 로그에 적고 그냥 넘어간다. 한 틱 빠지는 것보다 회차 전체가 멈추는 게 나쁘다.
+   - 이 기록이 E3(페이퍼 30일 게이트)의 근거가 되므로, 매 회차 빠뜨리지 않는다.
 2. **상태 읽기:** `harness/state.json`을 읽는다. `node -e "const {pickNextTask}=require('./harness/lib/core');const s=require('./harness/state.json');const r=pickNextTask(s);console.log(JSON.stringify({task:r.task&&r.task.id,human:r.humanActions.map(t=>t.id)},null,2))"` 로 이번 회차 작업을 정한다.
 3. **작업 수행:** 선택된 작업 1개(작으면 최대 2개)를 완수한다. 시작 시 해당 task의 `status`를 `in_progress`로 저장해 두고, 완료 시 `done`으로 바꾼다. 회차 안에 못 끝내면 `in_progress`로 남기고 `notes`에 이어할 지점을 적는다.
    - `task: null`이고 사람 작업만 남았으면: 코드 작업 대신 사람 작업을 쉽게 만들 준비물(주소 생성, 가이드, 초안, 체크리스트)을 하나 만들어라. 그것도 없으면 로그만 쓴다.
