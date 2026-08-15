@@ -28,7 +28,24 @@ const {
   WF_GATE,
 } = require('../src/research');
 
-const SYMBOLS = (process.argv[2] || 'BTCUSDT').split(',').map((s) => s.trim().toUpperCase());
+// 심볼은 쉼표 목록으로 주거나, harness/universe.json의 그룹 이름으로 줄 수 있다.
+// 그룹을 파일에 고정해 두는 이유: 탐색과 확인에 쓸 심볼을 미리 갈라 둬야
+// 나중에 결과를 보고 유리한 쪽으로 심볼을 고르는 일이 생기지 않는다.
+function resolveSymbols(arg) {
+  const raw = arg || 'BTCUSDT';
+  const uniPath = path.join(__dirname, '..', 'harness', 'universe.json');
+  if (fs.existsSync(uniPath)) {
+    const uni = JSON.parse(fs.readFileSync(uniPath, 'utf8'));
+    const picked = raw
+      .split(',')
+      .map((x) => x.trim())
+      .flatMap((x) => uni.groups[x] || [x.toUpperCase()]);
+    return [...new Set(picked)];
+  }
+  return raw.split(',').map((s) => s.trim().toUpperCase());
+}
+
+const SYMBOLS = resolveSymbols(process.argv[2]);
 const INTERVAL = process.argv[3] || '4h';
 const START = process.argv[4] || '2023-01-01';
 const MODE = process.argv[5] || 'anchored'; // anchored | rolling
