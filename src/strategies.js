@@ -486,7 +486,39 @@ function liquidationFade(candles, params = {}) {
   return guard(candles, raw, params);
 }
 
+// 레짐 게이트 — 장기 추세와 같은 방향의 포지션만 통과시킨다.
+//
+// liquidationFade는 "급락 = 일시적 강제 매도"를 가정하는데, 구조적 하락장에서는
+// 그 가정이 거짓이라 되받는 롱이 떨어지는 칼을 잡는 일이 된다(docs/meme-universe.md §4).
+// 밈코인 28종에서 엣지의 부호가 뒤집힌 것이 그 결과였다.
+//
+// 이 게이트는 포지션을 **없애기만 한다** — 내부 전략에 없던 포지션을 만들지 않는다.
+// 필터가 신호를 만들어내기 시작하면 그건 더 이상 필터가 아니라 별개의 전략이다.
+function regimeGate(candles, params = {}) {
+  const { inner = 'liquidationFade', innerParams = {}, trendLookback = 200 } = params;
+  assertPositiveInt(trendLookback, 'trendLookback');
+
+  const fn = STRATEGIES[inner];
+  if (!fn) throw new RangeError(`알 수 없는 내부 전략: ${inner}`);
+
+  // 내부 전략은 가드 없이 신호만 낸다 — 가드는 게이트 통과 후 한 번만 씌운다.
+  const signal = fn(candles, { ...innerParams, atrStopMult: null, dailyLossLimitPct: null });
+
+  const price = closes(candles);
+  const trendEma = ema(price, trendLookback);
+
+  const raw = candles.map((_, i) => {
+    if (trendEma[i] == null) return 0; // 추세를 모르는 구간에서는 서지 않는다
+    const trend = Math.sign(price[i] - trendEma[i]);
+    if (trend === 0) return 0;
+    return Math.sign(signal[i]) === trend ? signal[i] : 0;
+  });
+
+  return guard(candles, raw, params);
+}
+
 const STRATEGIES = {
+  regimeGate,
   stopRunReversal,
   liquidationFade,
   always,
@@ -506,6 +538,7 @@ const STRATEGIES = {
 };
 
 module.exports = {
+  regimeGate,
   stopRunReversal,
   liquidationFade,
   always,
