@@ -1,7 +1,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 
-const { sma, ema, rsi, atr, closes } = require('../src/indicators');
+const { sma, ema, rsi, atr, closes, rollingPercentileRank } = require('../src/indicators');
 
 const near = (actual, expected, msg) =>
   assert.ok(Math.abs(actual - expected) < 1e-9, `${msg ?? ''} — got ${actual}, want ${expected}`);
@@ -85,4 +85,29 @@ test('지표: 값 배열에 유한수가 아닌 항목이 있으면 TypeError', 
 
 test('closes: 캔들 배열에서 종가 시계열을 뽑는다', () => {
   assert.deepEqual(closes([candle(10, 8, 9), candle(12, 9, 11)]), [9, 11]);
+});
+
+// ---- rollingPercentileRank ----
+// 펀딩비 같은 절대 수준이 장세마다 달라지는 값은 고정 임계로 자를 수 없다.
+// "최근 N개 중 몇 번째로 높은가"로 바꿔야 구간이 달라져도 같은 의미를 갖는다.
+
+test('rollingPercentileRank: 창 안에서 현재 값 이하의 비율을 %로 돌려준다', () => {
+  assert.deepEqual(rollingPercentileRank([1, 2, 3, 4], 4), [null, null, null, 100]);
+  assert.deepEqual(rollingPercentileRank([4, 3, 2, 1], 4), [null, null, null, 25]);
+});
+
+test('rollingPercentileRank: 창이 앞으로 밀린다', () => {
+  const r = rollingPercentileRank([3, 1, 2], 3);
+  assert.equal(r[0], null);
+  assert.equal(r[1], null);
+  near(r[2], (2 / 3) * 100);
+});
+
+test('rollingPercentileRank: 창에 null이 섞이면 그 지점은 null (표본 부족)', () => {
+  assert.deepEqual(rollingPercentileRank([null, 2, 3], 3), [null, null, null]);
+  assert.deepEqual(rollingPercentileRank([1, 2, null], 3), [null, null, null]);
+});
+
+test('rollingPercentileRank: lookback이 양의 정수가 아니면 RangeError', () => {
+  assert.throws(() => rollingPercentileRank([1, 2, 3], 0), RangeError);
 });

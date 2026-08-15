@@ -1,7 +1,13 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 
-const { emaCross, rsiReversion, donchianBreakout, STRATEGIES } = require('../src/strategies');
+const {
+  emaCross,
+  rsiReversion,
+  donchianBreakout,
+  fundingReversion,
+  STRATEGIES,
+} = require('../src/strategies');
 
 const HOUR = 3600000;
 
@@ -132,4 +138,54 @@ test('모든 전략: 가드를 켜면 손절이 걸려 포지션이 더 짧아�
     const guarded = fn(candles, { atrStopMult: 1, dailyLossLimitPct: 3 }).reduce((a, b) => a + b, 0);
     assert.ok(guarded <= free, `${name}: 가드를 켰는데 포지션이 늘었다 (${guarded} > ${free})`);
   }
+});
+
+// ---- fundingReversion ----
+// 펀딩비 백분위가 낮으면(롱이 몰리지 않았으면) 진입, 높으면(과열) 청산하는 역발상.
+
+function withFunding(fundings) {
+  return fundings.map((funding, i) => ({
+    openTime: i * HOUR,
+    open: 100,
+    high: 100,
+    low: 100,
+    close: 100,
+    volume: 1,
+    closeTime: i * HOUR + HOUR - 1,
+    funding,
+  }));
+}
+
+test('fundingReversion: 펀딩 백분위가 낮으면 진입, 높으면 청산', () => {
+  // 백분위: i2~i4는 100(창 최고), i5는 33.3(창 최저)
+  const out = fundingReversion(withFunding([1, 2, 3, 4, 5, 0.5]), {
+    fundingLookback: 3,
+    buyBelowPct: 40,
+    sellAbovePct: 80,
+    ...NO_GUARDS,
+  });
+  assert.deepEqual(out, [0, 0, 0, 0, 0, 1]);
+});
+
+test('fundingReversion: 과열되면 보유 중이던 포지션을 청산한다', () => {
+  const out = fundingReversion(withFunding([5, 4, 3, 2, 1, 6]), {
+    fundingLookback: 3,
+    buyBelowPct: 40,
+    sellAbovePct: 80,
+    ...NO_GUARDS,
+  });
+  assert.deepEqual(out, [0, 0, 1, 1, 1, 0]);
+});
+
+test('fundingReversion: funding이 없는 캔들에서는 진입하지 않는다', () => {
+  const out = fundingReversion(withFunding([null, null, null, null]), {
+    fundingLookback: 3,
+    ...NO_GUARDS,
+  });
+  assert.deepEqual(out, [0, 0, 0, 0]);
+});
+
+test('fundingReversion: 임계 순서가 뒤집히면 RangeError', () => {
+  const c = withFunding([1, 2, 3]);
+  assert.throws(() => fundingReversion(c, { buyBelowPct: 90, sellAbovePct: 10 }), RangeError);
 });

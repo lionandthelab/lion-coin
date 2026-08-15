@@ -1,7 +1,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 
-const { parseFundingRates, alignFundingToCandles } = require('../src/funding');
+const { parseFundingRates, alignFundingToCandles, attachFunding } = require('../src/funding');
 
 const HOUR = 3600000;
 
@@ -81,4 +81,15 @@ test('alignFundingToCandles: 펀딩 기록이 없으면 전부 null', () => {
 test('alignFundingToCandles: 캔들과 길이가 같은 배열을 돌려준다', () => {
   const c = candles(10);
   assert.equal(alignFundingToCandles(c, parseFundingRates([row(0, '0.001')])).length, 10);
+});
+
+// ---- attachFunding ----
+
+test('attachFunding: 캔들에 funding 필드를 붙인다 (원본은 건드리지 않는다)', () => {
+  const c = candles(2);
+  const out = attachFunding(c, parseFundingRates([row(0, '0.001')]));
+  assert.equal(out[0].funding, 0.001);
+  assert.equal(out[1].funding, 0.001);
+  assert.equal(out[0].close, 100, '기존 필드 보존');
+  assert.equal(c[0].funding, undefined, '원본 캔들은 변경되지 않는다');
 });
