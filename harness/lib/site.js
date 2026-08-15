@@ -3,6 +3,7 @@
 // 경과 대시보드(GitHub Pages) 생성 — 순수 함수만. 파일 I/O는 scripts/build-site.js 책임.
 
 const { pickNextTask } = require('./core');
+const { summarizeArena } = require('./../../src/paper');
 
 const ESCAPES = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
 
@@ -75,7 +76,26 @@ function renderMarkdown(md) {
   return out.join('\n');
 }
 
-function buildSiteModel(state, logFiles) {
+// 페이퍼 아레나 모델. 이 페이지는 공개 채널이므로 모의 수치가 실거래 성과로
+// 읽히지 않도록 라벨과 경과일수를 함께 싣는다 (정직성 규약 §3-2).
+function buildPaperModel(paperState, nowMs) {
+  if (!paperState) return null;
+  const startMs = Date.parse(`${paperState.paperStart}T00:00:00Z`);
+  return {
+    label: paperState.label || 'paper',
+    symbols: paperState.symbols || [],
+    interval: paperState.interval,
+    paperStart: paperState.paperStart,
+    lastTickAt: paperState.lastTickAt,
+    days: Number.isFinite(startMs) ? Math.max(0, Math.floor((nowMs - startMs) / 86400000)) : 0,
+    rows: summarizeArena(paperState).map((r) => ({
+      ...r,
+      note: (paperState.candidates.find((c) => c.id === r.id) || {}).note || '',
+    })),
+  };
+}
+
+function buildSiteModel(state, logFiles, paperState = null, nowMs = Date.now()) {
   const byId = Object.fromEntries(state.tasks.map((t) => [t.id, t]));
   const depsDone = (t) =>
     (t.depends_on || []).every((id) => byId[id] && byId[id].status === 'done');
@@ -127,6 +147,7 @@ function buildSiteModel(state, logFiles) {
     tasks,
     nextTaskId: task ? task.id : null,
     humanActionIds: humanActions.map((t) => t.id),
+    paper: buildPaperModel(paperState, nowMs),
     logs,
   };
 }
@@ -146,6 +167,50 @@ function statusBadge(t) {
   if (t.requiresHuman) return '<span class="badge human">⚠ 사람 작업</span>';
   if (t.blocked) return '<span class="badge blocked">◌ 선행 대기</span>';
   return '<span class="badge pending">○ 대기</span>';
+}
+
+const signedPct = (v) => (v == null ? 'n/a' : `${v >= 0 ? '+' : ''}${v.toFixed(2)}%`);
+
+function renderPaperSection(paper) {
+  if (!paper) return '';
+
+  const hasData = paper.rows.some((r) => r.symbolCount > 0);
+  const body = !hasData
+    ? '<p class="subtitle">아직 기록이 없습니다. 매 회차 1틱씩 쌓입니다.</p>'
+    : `<table>
+<thead><tr><th>후보</th><th>평균</th><th>중앙</th><th>최악</th><th>최대 MDD</th><th>플러스</th></tr></thead>
+<tbody>
+${paper.rows
+  .map(
+    (r) => `<tr>
+<td class="tid">${escapeHtml(r.id)}${r.note ? `<div class="notes">${escapeHtml(r.note)}</div>` : ''}</td>
+<td class="${r.meanReturnPct != null && r.meanReturnPct < 0 ? 'neg' : ''}">${escapeHtml(signedPct(r.meanReturnPct))}</td>
+<td>${escapeHtml(signedPct(r.medianReturnPct))}</td>
+<td class="${r.worstReturnPct != null && r.worstReturnPct < 0 ? 'neg' : ''}">${escapeHtml(signedPct(r.worstReturnPct))}</td>
+<td>${r.maxDrawdownPct == null ? 'n/a' : escapeHtml(`${r.maxDrawdownPct.toFixed(2)}%`)}</td>
+<td>${r.positiveSymbols}/${r.symbolCount}</td>
+</tr>`
+  )
+  .join('\n')}
+</tbody>
+</table>`;
+
+  return `
+<h2>페이퍼 트랙레코드 <span class="badge human">⚠ 모의 (${escapeHtml(paper.label)})</span></h2>
+<section class="card">
+<p class="paper-warn"><strong>이 표의 모든 수치는 모의 체결이며 실거래가 아닙니다.</strong>
+여기 올라온 후보는 전부 <strong>실거래 착수 게이트 미통과</strong> 상태이고, 일부는 새 심볼군
+확인 라운드에서 기각된 이력이 있습니다
+(<a href="https://github.com/lionandthelab/lion-coin/blob/main/docs/walkforward-evaluation.md">워크포워드 평가 리포트</a>).
+그럼에도 굴리는 이유는 과거 데이터를 여러 차례 들여다본 이상 남은 검증이 미래 데이터뿐이기 때문입니다.</p>
+<p class="wallet-line">${escapeHtml(paper.symbols.join(', '))} · ${escapeHtml(paper.interval)} ·
+${escapeHtml(paper.paperStart)} 시작 (${paper.days}일차) ·
+마지막 갱신 ${escapeHtml(paper.lastTickAt || '-')}</p>
+${body}
+<p class="notes">평균만 보면 한 심볼의 성과가 나머지를 가리므로 <strong>최악 심볼</strong>과
+플러스 심볼 수를 함께 싣습니다. 낙폭은 평균이 아니라 최악값입니다 — 계좌가 실제로 견뎌야 하는 값이기 때문입니다.</p>
+</section>
+`;
 }
 
 function renderPage(model, generatedAtIso) {
@@ -258,6 +323,11 @@ summary { cursor: pointer; font-weight: 600; }
 .log-body pre { background: var(--plane); border: 1px solid var(--grid);
   border-radius: 8px; padding: 10px 12px; overflow-x: auto; font-size: 12.5px; }
 code { font-family: ui-monospace, SFMono-Regular, monospace; font-size: 0.92em; }
+.paper-warn { background: color-mix(in srgb, var(--warning) 14%, transparent);
+  border: 1px solid var(--warning); border-radius: 8px; padding: 10px 12px;
+  font-size: 13px; margin: 0 0 12px; }
+td.neg { color: #c0392b; }
+@media (prefers-color-scheme: dark) { td.neg { color: #ff7b6b; } }
 footer { color: var(--muted); font-size: 12.5px; margin-top: 32px; }
 footer a { color: var(--accent); text-decoration: none; }
 </style>
@@ -286,6 +356,7 @@ ${tiles}
 전체 전략은 저장소의 제안서(<code>비트코인_획득_전략_및_개발제안서.md</code>) 참고.</p>
 </section>
 
+${renderPaperSection(model.paper)}
 <h2>작업 보드 (${model.progress.done}/${model.progress.total} 완료)</h2>
 <section class="card">
 <table>
