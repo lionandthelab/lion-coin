@@ -393,7 +393,102 @@ function portfolio(candles, params = {}) {
   return guard(candles, raw, params);
 }
 
+// ────────────────────────────────────────────────────────────────────────────
+// 봇 역이용 계열
+//
+// 남을 속이는 주문(스푸핑·레이어링·워시트레이딩)은 만들지 않는다. 시장조작이고
+// 거래소 규정 위반이다. 대신 다른 참여자의 **예측 가능한 강제 행동**을 읽고
+// 그 반대편에 선다 — 이건 시장을 속이는 게 아니라 유동성을 공급하는 쪽이다.
+// ────────────────────────────────────────────────────────────────────────────
+
+// 스탑 사냥 되받기.
+// 추세추종 봇과 개인 손절이 직전 고/저점 **바깥**에 몰린다. 가격이 그 구간을
+// 잠깐 뚫어 스탑을 털고(스윕) 곧바로 구간 안으로 되돌아오면, 방금 강제로
+// 체결된 물량의 반대편이 유리하다. 뚫고 그대로 머무는 건 진짜 돌파이므로 건드리지 않는다.
+function stopRunReversal(candles, params = {}) {
+  const { lookback = 20, holdBars = 3 } = params;
+  assertPositiveInt(lookback, 'lookback');
+  assertPositiveInt(holdBars, 'holdBars');
+
+  const raw = new Array(candles.length).fill(0);
+  let held = 0;
+  let barsLeft = 0;
+
+  for (let i = lookback; i < candles.length; i += 1) {
+    if (barsLeft > 0) {
+      barsLeft -= 1;
+      raw[i] = held;
+      if (barsLeft === 0) held = 0;
+      continue;
+    }
+
+    const window = candles.slice(i - lookback, i);
+    const highest = Math.max(...window.map((c) => c.high));
+    const lowest = Math.min(...window.map((c) => c.low));
+    const { high, low, close } = candles[i];
+
+    // 위로 스윕: 고점을 넘었으나 종가는 구간 안으로 복귀 → 롱 스탑이 털린 것
+    if (high > highest && close <= highest) {
+      held = -1;
+      barsLeft = holdBars - 1;
+      raw[i] = held;
+    } else if (low < lowest && close >= lowest) {
+      held = 1;
+      barsLeft = holdBars - 1;
+      raw[i] = held;
+    }
+    if (barsLeft === 0) held = 0;
+  }
+
+  return guard(candles, raw, params);
+}
+
+// 청산 캐스케이드 되받기.
+// 강제청산은 가격을 보지 않고 시장가로 나온다. 그래서 거래량 급증과 함께
+// 평소보다 훨씬 큰 봉이 만들어지고, 그 과도한 부분은 되돌려지는 경향이 있다.
+// 두 조건을 모두 요구한다 — 거래량 없는 큰 봉은 그냥 추세이고,
+// 큰 봉 없는 거래량 급증은 그냥 관심이다.
+function liquidationFade(candles, params = {}) {
+  const { lookback = 50, volMult = 3, rangeMult = 2, holdBars = 3 } = params;
+  assertPositiveInt(lookback, 'lookback');
+  assertPositiveInt(holdBars, 'holdBars');
+
+  const raw = new Array(candles.length).fill(0);
+  let held = 0;
+  let barsLeft = 0;
+
+  for (let i = lookback; i < candles.length; i += 1) {
+    if (barsLeft > 0) {
+      barsLeft -= 1;
+      raw[i] = held;
+      if (barsLeft === 0) held = 0;
+      continue;
+    }
+
+    const window = candles.slice(i - lookback, i);
+    const avgVol = window.reduce((a, c) => a + c.volume, 0) / window.length;
+    const avgRange = window.reduce((a, c) => a + (c.high - c.low), 0) / window.length;
+    const c = candles[i];
+    const range = c.high - c.low;
+
+    if (avgVol > 0 && avgRange > 0 && c.volume >= avgVol * volMult && range >= avgRange * rangeMult) {
+      // 봉의 방향과 반대로 선다.
+      const dir = c.close < c.open ? 1 : c.close > c.open ? -1 : 0;
+      if (dir !== 0) {
+        held = dir;
+        barsLeft = holdBars - 1;
+        raw[i] = held;
+      }
+    }
+    if (barsLeft === 0) held = 0;
+  }
+
+  return guard(candles, raw, params);
+}
+
 const STRATEGIES = {
+  stopRunReversal,
+  liquidationFade,
   always,
   never,
   volTarget,
@@ -411,6 +506,8 @@ const STRATEGIES = {
 };
 
 module.exports = {
+  stopRunReversal,
+  liquidationFade,
   always,
   never,
   volTarget,

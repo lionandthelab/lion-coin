@@ -32,12 +32,26 @@ const SYMBOLS = (process.argv[2] || 'BTCUSDT').split(',').map((s) => s.trim().to
 const INTERVAL = process.argv[3] || '4h';
 const START = process.argv[4] || '2023-01-01';
 const MODE = process.argv[5] || 'anchored'; // anchored | rolling
+const EXECUTION = process.argv[6] || 'taker'; // taker | maker
 
 // 이어붙인 곡선의 연율화 지표(CAGR·샤프)를 내려면 봉 하나가 1년의 몇 분의 일인지 알아야 한다.
-const PERIODS_PER_YEAR = { '1h': 8760, '2h': 4380, '4h': 2190, '6h': 1460, '12h': 730, '1d': 365 };
+const PERIODS_PER_YEAR = {
+  '1m': 525600, '5m': 105120, '15m': 35040, '30m': 17520,
+  '1h': 8760, '2h': 4380, '4h': 2190, '6h': 1460, '12h': 730, '1d': 365,
+};
 
 // 무기한 선물 전제이므로 펀딩 비용을 문다. 빼면 장기 보유 전략이 실제보다 좋아 보인다.
-const COSTS = { feeBps: 10, slippageBps: 5, initialEquity: 1000, fundingCost: true };
+// 바이낸스 선물 실제 요율에 맞춘다 — 테이커 5bps, 메이커 2bps.
+// 초단타는 봉당 움직임이 왕복 비용보다 작아 이 차이가 결론을 가른다.
+const COSTS = {
+  execution: EXECUTION,
+  takerFeeBps: 5,
+  makerFeeBps: 2,
+  makerOffsetBps: 2,
+  slippageBps: 2,
+  initialEquity: 1000,
+  fundingCost: true,
+};
 // 폴드를 늘리면 재최적화가 잦아져 실제 운용에 가까워지고, 이어붙인 곡선도 길어진다.
 const FOLD_OPTS = { foldCount: 8, firstTrainRatio: 0.4, minTestSize: 60, mode: MODE };
 const SCORE_OPTS = { minTrades: 15 };
@@ -53,6 +67,14 @@ const PPY = PERIODS_PER_YEAR[INTERVAL] || 2190;
 
 const GRIDS = {
   // 사이징 계층 — 연속 노출 엔진이 열리면서 처음 시도하는 축.
+  // 봇 역이용 계열 — 다른 참여자의 예측 가능한 강제 행동을 되받는다.
+  stopRunReversal: withRisk(
+    grid({ lookback: [12, 24, 48, 96], holdBars: [1, 3, 6, 12] })
+  ),
+  liquidationFade: withRisk(
+    grid({ lookback: [50, 100], volMult: [3, 5, 8], rangeMult: [2, 3], holdBars: [1, 3, 6] })
+  ),
+
   volTarget: withRisk(
     grid({
       inner: ['emaCrossLS', 'donchianLS', 'tsMomentum'],
@@ -215,7 +237,10 @@ async function runSymbol(symbol) {
 async function main() {
   console.log(`\n워크포워드 평가 — ${SYMBOLS.join(', ')} · ${INTERVAL} · ${START}~ · ${MODE}`);
   console.log(`  전략 ${Object.keys(GRIDS).length}종 · 조합 ${Object.values(GRIDS).reduce((a, g) => a + g.length, 0)}개 · 폴드 ${FOLD_OPTS.foldCount}`);
-  console.log(`  비용: 수수료 ${COSTS.feeBps}bps + 슬리피지 ${COSTS.slippageBps}bps + 펀딩 실비`);
+  console.log(
+    `  체결: ${EXECUTION} · 수수료 ${EXECUTION === 'maker' ? COSTS.makerFeeBps : COSTS.takerFeeBps}bps · ` +
+      `${EXECUTION === 'maker' ? `지정가 오프셋 ${COSTS.makerOffsetBps}bps (미체결 위험 반영)` : `슬리피지 ${COSTS.slippageBps}bps`} + 펀딩 실비`
+  );
   console.log(`  게이트: 수익>0 · 매수보유 초과 · MDD≤${WF_GATE.maxDrawdownPct}% · 트레이드≥${WF_GATE.minTrades} · WFE≥${WF_GATE.minWfe}`);
   console.log('  ※ 폴드 수익률 평균이 아니라 아웃오브샘플 구간을 이어붙인 연속 곡선으로 평가한다.\n');
 
@@ -298,7 +323,7 @@ async function main() {
   }
 
   fs.mkdirSync(DATA_DIR, { recursive: true });
-  const out = path.join(DATA_DIR, `wf-${SYMBOLS.join('_')}-${INTERVAL}-${MODE}.json`);
+  const out = path.join(DATA_DIR, `wf-${SYMBOLS.join('_')}-${INTERVAL}-${MODE}-${EXECUTION}.json`);
   fs.writeFileSync(out, JSON.stringify({ symbols: SYMBOLS, interval: INTERVAL, start: START, mode: MODE, all, overall }, null, 2));
   console.log(`\n결과 저장: ${path.relative(process.cwd(), out)}`);
 }
