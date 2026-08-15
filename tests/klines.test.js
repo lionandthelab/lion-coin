@@ -1,7 +1,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 
-const { parseKlines, buildKlinesUrl, MAX_LIMIT } = require('../src/klines');
+const { parseKlines, buildKlinesUrl, intervalToMs, MAX_LIMIT } = require('../src/klines');
 
 // 바이낸스 /api/v3/klines 응답 한 줄 (숫자는 모두 문자열로 온다)
 function row(overrides = {}) {
@@ -143,4 +143,24 @@ test('buildKlinesUrl: limit이 1~MAX_LIMIT 범위를 벗어나면 RangeError', (
     RangeError
   );
   assert.throws(() => buildKlinesUrl({ symbol: 'BTCUSDT', interval: '1h', limit: 1.5 }), RangeError);
+});
+
+// ---- intervalToMs ----
+// 페이지네이션은 "직전 페이지 마지막 봉 + 1간격"부터 다음 페이지를 요청한다.
+// 이 간격이 틀리면 봉이 빠지거나 겹치고, 겹친 봉은 parseKlines의 중복 검사에 걸린다.
+
+test('intervalToMs: 분·시간·일·주 단위를 밀리초로 변환한다', () => {
+  assert.equal(intervalToMs('1m'), 60 * 1000);
+  assert.equal(intervalToMs('15m'), 15 * 60 * 1000);
+  assert.equal(intervalToMs('1h'), 60 * 60 * 1000);
+  assert.equal(intervalToMs('4h'), 4 * 60 * 60 * 1000);
+  assert.equal(intervalToMs('1d'), 24 * 60 * 60 * 1000);
+  assert.equal(intervalToMs('1w'), 7 * 24 * 60 * 60 * 1000);
+});
+
+test('intervalToMs: 알 수 없는 간격은 TypeError (조용히 추측하지 않는다)', () => {
+  assert.throws(() => intervalToMs('1y'), TypeError);
+  assert.throws(() => intervalToMs('h'), TypeError);
+  assert.throws(() => intervalToMs(''), TypeError);
+  assert.throws(() => intervalToMs(60), TypeError);
 });

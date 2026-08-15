@@ -108,6 +108,36 @@ function buildKlinesUrl({
   return `${baseUrl.replace(/\/+$/, '')}/api/v3/klines?${params.join('&')}`;
 }
 
+const MINUTE = 60 * 1000;
+const INTERVAL_MS = {
+  '1m': MINUTE,
+  '3m': 3 * MINUTE,
+  '5m': 5 * MINUTE,
+  '15m': 15 * MINUTE,
+  '30m': 30 * MINUTE,
+  '1h': 60 * MINUTE,
+  '2h': 120 * MINUTE,
+  '4h': 240 * MINUTE,
+  '6h': 360 * MINUTE,
+  '8h': 480 * MINUTE,
+  '12h': 720 * MINUTE,
+  '1d': 1440 * MINUTE,
+  '3d': 3 * 1440 * MINUTE,
+  '1w': 7 * 1440 * MINUTE,
+};
+
+// 페이지네이션은 "직전 페이지 마지막 봉 + 1간격"에서 다음 페이지를 시작한다.
+// 이 간격을 추측하면 봉이 빠지거나 겹치므로, 아는 값만 돌려주고 나머지는 거부한다.
+function intervalToMs(interval) {
+  const ms = typeof interval === 'string' ? INTERVAL_MS[interval] : undefined;
+  if (ms === undefined) {
+    throw new TypeError(
+      `알 수 없는 interval입니다: ${interval} (지원: ${Object.keys(INTERVAL_MS).join(', ')})`
+    );
+  }
+  return ms;
+}
+
 async function fetchKlines(options) {
   const res = await fetch(buildKlinesUrl(options));
   if (!res.ok) {
@@ -116,4 +146,40 @@ async function fetchKlines(options) {
   return parseKlines(await res.json());
 }
 
-module.exports = { DEFAULT_BASE_URL, MAX_LIMIT, parseKlines, buildKlinesUrl, fetchKlines };
+// 1회 응답 상한(1000봉)을 넘는 구간을 여러 요청으로 이어 받는다.
+// 이어붙인 결과는 parseKlines의 검사를 통과한 페이지들이지만, 페이지 경계에서
+// 겹칠 수 있으므로 직전 마지막 openTime 이하인 봉은 버린다.
+async function fetchKlinesRange({ symbol, interval, startTime, endTime, baseUrl, onPage } = {}) {
+  const step = intervalToMs(interval);
+  const all = [];
+  let cursor = startTime;
+
+  while (cursor <= endTime) {
+    const page = await fetchKlines({ symbol, interval, startTime: cursor, endTime, baseUrl });
+    if (page.length === 0) break;
+
+    const last = all.length > 0 ? all[all.length - 1].openTime : -Infinity;
+    for (const c of page) {
+      if (c.openTime > last) all.push(c);
+    }
+
+    if (onPage) onPage(all.length, page[page.length - 1].openTime);
+
+    const next = page[page.length - 1].openTime + step;
+    if (next <= cursor) break; // 진전이 없으면 무한 루프를 끊는다
+    cursor = next;
+  }
+
+  return all;
+}
+
+module.exports = {
+  DEFAULT_BASE_URL,
+  MAX_LIMIT,
+  INTERVAL_MS,
+  parseKlines,
+  buildKlinesUrl,
+  intervalToMs,
+  fetchKlines,
+  fetchKlinesRange,
+};
