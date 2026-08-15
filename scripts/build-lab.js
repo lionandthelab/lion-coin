@@ -15,6 +15,59 @@ const ROOT = path.join(__dirname, '..');
 const OUT_DIR = path.join(ROOT, '_site');
 const MODULES = ['indicators', 'risk', 'backtest', 'strategies', 'research', 'funding', 'klines'];
 
+const universe = JSON.parse(fs.readFileSync(path.join(ROOT, 'harness', 'universe.json'), 'utf8'));
+
+// 심볼 목록은 검증 유니버스에서 가져온다. 사용자가 아무 심볼이나 칠 수도 있어야 하므로
+// datalist로 붙여 드롭다운과 직접 입력을 동시에 지원한다.
+const SYMBOL_GROUPS = [
+  { label: '메이저', symbols: universe.groups.majors },
+  { label: '밈코인 (탐색)', symbols: universe.groups['meme-a'] },
+  { label: '밈코인 (확인)', symbols: universe.groups['meme-b'] },
+  { label: '상장폐지 (생존편향 대조)', symbols: universe.groups.delisted },
+];
+
+// 템플릿은 "돌려보면 무언가를 알게 되는" 조합만 넣는다. 파라미터를 처음부터
+// 직접 채우게 하면 대부분 아무 의미 없는 결과를 보고 도구를 닫는다.
+// note는 무엇을 보라는 안내이고, 결과가 좋다는 뜻이 아니다.
+const TEMPLATES = [
+  {
+    name: '① 과최적화 함정 — 단일 백테스트는 왜 못 믿나',
+    cfg: { symbol: 'BTCUSDT', interval: '1h', days: 730, strategy: 'emaCross', execution: 'taker', fee: 5,
+      params: { fast: 20, slow: 100, atrStopMult: 3, dailyLossLimitPct: 5 } },
+    note: '먼저 <b>백테스트 실행</b>을, 그다음 <b>워크포워드 검증</b>을 눌러 두 결과를 비교하세요. 같은 전략·같은 구간인데 판정이 갈립니다. 이 차이가 이 도구의 존재 이유입니다.',
+  },
+  {
+    name: '② 청산 되받기 — 엣지는 있는데 비용 아래',
+    cfg: { symbol: 'BTCUSDT', interval: '5m', days: 365, strategy: 'liquidationFade', execution: 'maker', fee: 2,
+      params: { lookback: 100, volMult: 8, rangeMult: 3, holdBars: 6, atrStopMult: 3, dailyLossLimitPct: 5 } },
+    note: '수수료를 <b>0</b>으로 바꿔 한 번, 원래대로 <b>2</b>로 한 번 돌려보세요. 신호 자체는 돈을 버는데 실행 비용이 그것을 넘습니다 — 초단타에서 가장 흔한 사망 원인입니다.',
+  },
+  {
+    name: '③ 비용의 벽 — 테이커 vs 메이커',
+    cfg: { symbol: 'BTCUSDT', interval: '5m', days: 180, strategy: 'liquidationFade', execution: 'taker', fee: 5,
+      params: { lookback: 100, volMult: 8, rangeMult: 3, holdBars: 6, atrStopMult: 3, dailyLossLimitPct: 5 } },
+    note: '체결을 <b>메이커</b>로 바꿔 다시 돌려보세요. 5분봉 BTC의 봉당 움직임 중앙값은 3.5bps인데 테이커 왕복은 14bps입니다 — 신호가 아니라 산수의 문제입니다.',
+  },
+  {
+    name: '④ 같은 전략, 밈코인에서는 부호가 뒤집힌다',
+    cfg: { symbol: '1000PEPEUSDT', interval: '15m', days: 365, strategy: 'liquidationFade', execution: 'maker', fee: 2,
+      params: { lookback: 100, volMult: 8, rangeMult: 3, holdBars: 6, atrStopMult: 3, dailyLossLimitPct: 5 } },
+    note: '②와 같은 전략입니다. 심볼을 <b>BTCUSDT</b>와 번갈아 넣어 비교하세요. "급락 = 일시적 강제 매도"라는 가정이 구조적 하락장에서는 거짓이 됩니다.',
+  },
+  {
+    name: '⑤ 추세추종 롱숏 — 매수보유와 비교하기',
+    cfg: { symbol: 'ETHUSDT', interval: '4h', days: 730, strategy: 'emaCrossLS', execution: 'taker', fee: 5,
+      params: { fast: 20, slow: 100, atrStopMult: 3, dailyLossLimitPct: 5 } },
+    note: '결과표의 <b>매수보유(같은 구간)</b> 줄을 함께 보세요. 하락장에서 덜 잃는 것은 수익이 아닙니다 — 게이트가 매수보유 초과를 요구하는 이유입니다.',
+  },
+  {
+    name: '⑥ 필터가 신호를 죽일 때 — 레짐 게이트',
+    cfg: { symbol: '1000PEPEUSDT', interval: '15m', days: 365, strategy: 'regimeGate', execution: 'maker', fee: 2,
+      params: { inner: 'liquidationFade', innerParams: { lookback: 100, volMult: 8, rangeMult: 3, holdBars: 6 }, trendLookback: 200, atrStopMult: 3, dailyLossLimitPct: 5 } },
+    note: '④와 비교하세요. 추세 역행 포지션을 걸러내면 나아질 것 같지만, 실제로는 거래 수가 줄면서 성과도 나빠집니다. 필터는 잡음만 걷어내지 않습니다.',
+  },
+];
+
 const bundle = bundleModules(
   MODULES.map((name) => ({
     name,
@@ -88,8 +141,21 @@ footer a { color:var(--accent); }
 <a href="https://github.com/lionandthelab/lion-coin/blob/main/docs/walkforward-evaluation.md">전부 실거래 게이트를 통과하지 못했습니다</a>.</p>
 
 <section class="card">
+<label for="template">템플릿 — 돌려보면 무언가를 알게 되는 조합</label>
+<select id="template">
+  <option value="">(직접 설정)</option>
+${TEMPLATES.map((t, i) => `  <option value="${i}">${t.name}</option>`).join('\n')}
+</select>
+<p id="tnote" class="notes" style="margin:8px 0 16px"></p>
 <div class="grid">
-  <div><label for="symbol">심볼</label><input id="symbol" value="BTCUSDT"></div>
+  <div><label for="symbol">심볼</label>
+    <input id="symbol" list="symbols" value="BTCUSDT" autocomplete="off">
+    <datalist id="symbols">
+${SYMBOL_GROUPS.map(
+  (g) => g.symbols.map((sym) => `      <option value="${sym}">${g.label}</option>`).join('\n')
+).join('\n')}
+    </datalist>
+  </div>
   <div><label for="interval">간격</label><select id="interval">
     <option>5m</option><option>15m</option><option selected>1h</option><option>4h</option><option>1d</option>
   </select></div>
@@ -137,6 +203,21 @@ ${bundle}
       $('strategy').appendChild(o);
     });
   $('strategy').value = 'emaCross';
+
+  var TEMPLATES = ${JSON.stringify(TEMPLATES)};
+  $('template').addEventListener('change', function () {
+    var t = TEMPLATES[this.value];
+    if (!t) { $('tnote').innerHTML = ''; return; }
+    $('symbol').value = t.cfg.symbol;
+    $('interval').value = t.cfg.interval;
+    $('days').value = t.cfg.days;
+    $('strategy').value = t.cfg.strategy;
+    $('execution').value = t.cfg.execution;
+    $('fee').value = t.cfg.fee;
+    $('params').value = JSON.stringify(t.cfg.params, null, 2);
+    $('tnote').innerHTML = t.note;
+    out.innerHTML = '';
+  });
 
   function costs() {
     var exec = $('execution').value;
