@@ -76,6 +76,37 @@ function validateBlinkKeyFormat(key) {
   return { valid: true };
 }
 
+// Coinos GET /api/me 응답. 오픈소스(routes/users.ts)의 me 핸들러가 user.balance를
+// sats로 채운다. 잔액 0은 정상값(아직 못 받은 상태)이라 falsy 검사로 거를 수 없다.
+function parseCoinosWallet(json) {
+  if (!json || typeof json.balance !== 'number' || !Number.isFinite(json.balance)) {
+    throw new TypeError('Coinos 응답에 숫자 balance 필드가 없습니다');
+  }
+  return Math.floor(json.balance);
+}
+
+// Coinos 토큰은 JWT라 Blink의 blink_ 같은 접두사가 없다. 구조로 판단해
+// 네트워크 왕복 없이 흔한 복붙 실수를 잡는다.
+function validateCoinosTokenFormat(token) {
+  if (typeof token !== 'string' || token.length === 0) {
+    return { valid: false, reason: 'COINOS_TOKEN이 비어 있습니다.' };
+  }
+  if (token !== token.trim()) {
+    return { valid: false, reason: 'COINOS_TOKEN 앞뒤에 공백/줄바꿈이 섞여 있습니다. 복붙 시 딸려온 공백을 제거하세요.' };
+  }
+  // 이전 공급자 키를 그대로 둔 채 이름만 바꾸는 실수가 실제로 있었다.
+  if (token.startsWith('blink_') || token.startsWith('ak_')) {
+    return {
+      valid: false,
+      reason: `Blink 등 다른 서비스의 키로 보입니다("${token.split('_')[0]}_" 접두사). Coinos 토큰은 coinos.io 로그인 후 문서 페이지나 /api/login 응답에서 받습니다.`,
+    };
+  }
+  if (token.split('.').length !== 3) {
+    return { valid: false, reason: 'Coinos 토큰은 점(.)으로 구분된 3구획 JWT여야 합니다.' };
+  }
+  return { valid: true };
+}
+
 function logFileName(date = new Date()) {
   const kst = new Intl.DateTimeFormat('sv-SE', {
     timeZone: 'Asia/Seoul',
@@ -92,5 +123,7 @@ module.exports = {
   parseLnbitsWallet,
   parseBlinkWallets,
   validateBlinkKeyFormat,
+  parseCoinosWallet,
+  validateCoinosTokenFormat,
   logFileName,
 };
