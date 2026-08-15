@@ -169,3 +169,35 @@ test('runPortfolioBacktest: 총 노출이 1을 넘으면 RangeError (레버리�
     RangeError
   );
 });
+
+// ---- 리밸런싱 주기 제한 ----
+// 15분마다 순위를 다시 매기면 상위 종목이 계속 바뀌어 회전율이 폭발한다.
+// 실측: 밈코인 14종 15분봉에서 회전율 688배, 리밸런싱 3,834회 → 수익 -98.7%.
+// 순위를 매기는 주기와 갈아타는 주기를 분리한다.
+
+test('rankRotation: rebalanceEvery 동안은 직전 비중을 유지한다', () => {
+  const aligned = alignSeries({
+    A: candles([100, 110, 120, 100, 90]),
+    B: candles([100, 100, 100, 130, 140]),
+  });
+  const w = rankRotation(aligned, { lookback: 1, topK: 1, rebalanceEvery: 3 });
+  // i=1에서 정한 비중을 i=2,3까지 들고 가고 i=4에서 다시 정한다
+  assert.deepEqual(w[1], w[2]);
+  assert.deepEqual(w[2], w[3]);
+  assert.notDeepEqual(w[3], w[4]);
+});
+
+test('rankRotation: rebalanceEvery 기본값 1은 매 봉 재조정 (기존 동작)', () => {
+  const aligned = alignSeries({
+    A: candles([100, 110, 90]),
+    B: candles([100, 100, 130]),
+  });
+  const w = rankRotation(aligned, { lookback: 1, topK: 1 });
+  assert.deepEqual(w[1], { A: 1 });
+  assert.deepEqual(w[2], { B: 1 });
+});
+
+test('rankRotation: rebalanceEvery가 양의 정수가 아니면 RangeError', () => {
+  const aligned = alignSeries({ A: candles([1, 2, 3]), B: candles([3, 2, 1]) });
+  assert.throws(() => rankRotation(aligned, { lookback: 1, topK: 1, rebalanceEvery: 0 }), RangeError);
+});

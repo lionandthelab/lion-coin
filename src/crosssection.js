@@ -43,9 +43,10 @@ function assertPositiveInt(value, name) {
 
 // 룩백 수익률로 순위를 매겨 상위 topK를 롱, 하위 bottomK를 숏으로 잡는다.
 // 총 노출(|비중| 합)은 1로 정규화한다 — 레버리지는 들이지 않는다.
-function rankRotation(aligned, { lookback = 24, topK = 1, bottomK = 0 } = {}) {
+function rankRotation(aligned, { lookback = 24, topK = 1, bottomK = 0, rebalanceEvery = 1 } = {}) {
   assertPositiveInt(lookback, 'lookback');
   assertPositiveInt(topK, 'topK');
+  assertPositiveInt(rebalanceEvery, 'rebalanceEvery');
   if (!Number.isInteger(bottomK) || bottomK < 0) {
     throw new RangeError(`bottomK는 0 이상의 정수여야 합니다: ${bottomK}`);
   }
@@ -57,8 +58,13 @@ function rankRotation(aligned, { lookback = 24, topK = 1, bottomK = 0 } = {}) {
   const slots = topK + bottomK;
   const weight = 1 / slots;
 
+  // 순위를 매기는 주기와 갈아타는 주기를 분리한다. 매 봉 재조정하면 상위 종목이
+  // 계속 바뀌어 회전율이 폭발하고, 그 비용이 순위의 가치를 통째로 삼킨다.
+  let held = {};
+
   return aligned.times.map((_, i) => {
     if (i < lookback) return {};
+    if ((i - lookback) % rebalanceEvery !== 0) return held;
 
     const scored = aligned.symbols
       .map((s) => {
@@ -71,6 +77,7 @@ function rankRotation(aligned, { lookback = 24, topK = 1, bottomK = 0 } = {}) {
     const w = {};
     for (let k = 0; k < topK; k += 1) w[scored[k].s] = weight;
     for (let k = 0; k < bottomK; k += 1) w[scored[n - 1 - k].s] = -weight;
+    held = w;
     return w;
   });
 }
