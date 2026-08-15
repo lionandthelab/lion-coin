@@ -14,6 +14,8 @@ const {
   ensemble,
   volTarget,
   portfolio,
+  stopRunReversal,
+  liquidationFade,
   STRATEGIES,
 } = require('../src/strategies');
 
@@ -400,4 +402,97 @@ test('portfolio: 구성원이 없거나 가중치 합이 0이면 RangeError', ()
     () => portfolio(c, { members: [{ strategy: 'always', params: {}, weight: 0 }] }),
     RangeError
   );
+});
+
+// ---- 봇 역이용 전략 (초단타) ----
+// 남을 속이는 주문(스푸핑·레이어링)은 만들지 않는다. 대신 다른 참여자의
+// **예측 가능한 강제 행동**을 읽고 반대편에 선다.
+//
+// stopRunReversal: 추세추종 봇과 개인이 직전 고/저점 바깥에 스탑을 몰아둔다.
+//   가격이 그 구간을 잠깐 뚫고(스윕) 되돌아오면, 방금 털린 물량의 반대가 유리하다.
+// liquidationFade: 강제청산은 가격을 무시하고 시장가로 나온다. 거래량 급증과
+//   함께 큰 봉이 나온 뒤에는 과도한 부분이 되돌려지는 경향이 있다.
+
+// 시가는 직전 종가로 잇는다 — 봉의 방향(시가→종가)이 나와야 페이드 방향을 정할 수 있다.
+function ohlcv(rows) {
+  return rows.map(([high, low, close, volume], i) => ({
+    openTime: i * HOUR,
+    open: i === 0 ? close : rows[i - 1][2],
+    high,
+    low,
+    close,
+    volume,
+    closeTime: i * HOUR + HOUR - 1,
+  }));
+}
+
+test('stopRunReversal: 직전 고점을 뚫었다가 되돌아오면 숏', () => {
+  const base = Array.from({ length: 10 }, () => [101, 99, 100, 1]);
+  // 스윕 봉: 고가가 직전 고점(101)을 넘었으나 종가는 구간 안으로 복귀
+  const c = ohlcv([...base, [110, 99, 100, 1]]);
+  const out = stopRunReversal(c, { lookback: 10, ...NO_GUARDS });
+  assert.equal(out[10], -1);
+});
+
+test('stopRunReversal: 직전 저점을 뚫었다가 되돌아오면 롱', () => {
+  const base = Array.from({ length: 10 }, () => [101, 99, 100, 1]);
+  const c = ohlcv([...base, [101, 90, 100, 1]]);
+  const out = stopRunReversal(c, { lookback: 10, ...NO_GUARDS });
+  assert.equal(out[10], 1);
+});
+
+test('stopRunReversal: 뚫고 그대로 머물면 스윕이 아니다 (진짜 돌파)', () => {
+  const base = Array.from({ length: 10 }, () => [101, 99, 100, 1]);
+  // 고가도 종가도 구간 밖 → 되돌림이 없으므로 진입하지 않는다
+  const c = ohlcv([...base, [110, 105, 109, 1]]);
+  const out = stopRunReversal(c, { lookback: 10, ...NO_GUARDS });
+  assert.equal(out[10], 0);
+});
+
+test('stopRunReversal: 구간을 건드리지 않으면 진입하지 않는다', () => {
+  const base = Array.from({ length: 10 }, () => [101, 99, 100, 1]);
+  const c = ohlcv([...base, [100.5, 99.5, 100, 1]]);
+  assert.equal(stopRunReversal(c, { lookback: 10, ...NO_GUARDS })[10], 0);
+});
+
+test('stopRunReversal: 진입 후 holdBars 동안 유지하고 청산한다', () => {
+  const base = Array.from({ length: 10 }, () => [101, 99, 100, 1]);
+  const c = ohlcv([...base, [110, 99, 100, 1], [101, 99, 100, 1], [101, 99, 100, 1], [101, 99, 100, 1]]);
+  const out = stopRunReversal(c, { lookback: 10, holdBars: 2, ...NO_GUARDS });
+  assert.deepEqual(out.slice(10), [-1, -1, 0, 0]);
+});
+
+test('liquidationFade: 거래량 급증 + 대형 하락봉 뒤에는 롱으로 되받는다', () => {
+  const base = Array.from({ length: 30 }, () => [101, 99, 100, 10]);
+  const c = ohlcv([...base, [100, 80, 82, 200]]); // 대형 음봉 + 거래량 20배
+  const out = liquidationFade(c, { lookback: 30, volMult: 3, rangeMult: 2, ...NO_GUARDS });
+  assert.equal(out[30], 1);
+});
+
+test('liquidationFade: 거래량 급증 + 대형 상승봉 뒤에는 숏으로 되받는다', () => {
+  const base = Array.from({ length: 30 }, () => [101, 99, 100, 10]);
+  const c = ohlcv([...base, [120, 100, 118, 200]]);
+  const out = liquidationFade(c, { lookback: 30, volMult: 3, rangeMult: 2, ...NO_GUARDS });
+  assert.equal(out[30], -1);
+});
+
+test('liquidationFade: 거래량이 평범하면 큰 봉이어도 진입하지 않는다', () => {
+  const base = Array.from({ length: 30 }, () => [101, 99, 100, 10]);
+  const c = ohlcv([...base, [100, 80, 82, 11]]);
+  assert.equal(liquidationFade(c, { lookback: 30, volMult: 3, rangeMult: 2, ...NO_GUARDS })[30], 0);
+});
+
+test('liquidationFade: 봉이 평범하면 거래량이 터져도 진입하지 않는다', () => {
+  const base = Array.from({ length: 30 }, () => [101, 99, 100, 10]);
+  const c = ohlcv([...base, [101, 99, 100, 200]]);
+  assert.equal(liquidationFade(c, { lookback: 30, volMult: 3, rangeMult: 2, ...NO_GUARDS })[30], 0);
+});
+
+test('봇 역이용 전략도 공통 규약을 지킨다', () => {
+  const c = ohlcv(Array.from({ length: 60 }, (_, i) => [102 + i * 0.1, 98 + i * 0.1, 100 + i * 0.1, 5 + (i % 7)]));
+  for (const name of ['stopRunReversal', 'liquidationFade']) {
+    const out = STRATEGIES[name](c, {});
+    assert.equal(out.length, c.length, `${name}: 길이 불일치`);
+    assert.ok(out.every((p) => p >= -1 && p <= 1), `${name}: 노출 범위 초과`);
+  }
 });
