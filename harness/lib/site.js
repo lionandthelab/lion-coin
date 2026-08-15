@@ -277,8 +277,17 @@ function renderResearchSection(r) {
     )
     .join('\n');
 
+  const headline = r.headline
+    ? `<section class="card headline">
+<h3>${escapeHtml(r.headline.title)}</h3>
+<p>${escapeHtml(r.headline.body)}</p>
+<p class="notes"><a href="https://github.com/lionandthelab/lion-coin/blob/main/${escapeHtml(r.headline.link)}">${escapeHtml(r.headline.link)}</a></p>
+</section>`
+    : '';
+
   return `
 <h2>전략 연구 현황</h2>
+${headline}
 <div class="tiles">
 <div class="tile"><div class="tile-label">캠페인</div><div class="tile-value">${r.campaigns}</div></div>
 <div class="tile"><div class="tile-label">검증 전략</div><div class="tile-value">${r.strategiesTested}</div></div>
@@ -417,6 +426,8 @@ summary { cursor: pointer; font-weight: 600; }
 .log-body pre { background: var(--plane); border: 1px solid var(--grid);
   border-radius: 8px; padding: 10px 12px; overflow-x: auto; font-size: 12.5px; }
 code { font-family: ui-monospace, SFMono-Regular, monospace; font-size: 0.92em; }
+.headline { border-left: 3px solid var(--accent); }
+.headline h3 { margin-top: 0; }
 svg.spark { display: block; }
 svg.spark.up { color: var(--good); }
 svg.spark.down { color: #c0392b; }

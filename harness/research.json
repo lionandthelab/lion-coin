@@ -1,28 +1,148 @@
 {
   "updatedAt": "2026-08-15",
   "note": "워크포워드 연구 요약. 상세 수치와 재현 명령은 docs/walkforward-evaluation.md · docs/research-campaign.md 참조. 이 파일은 대시보드 렌더링용 큐레이션이며 원본 결과는 data/wf-*.json(gitignore)에 있다.",
-  "campaigns": 6,
-  "strategiesTested": 12,
+  "campaigns": 8,
+  "strategiesTested": 15,
   "symbolsTested": 24,
   "gatePassed": 0,
   "gate": "이어붙인 워크포워드 곡선: 플러스 수익 · 매수보유 초과 · MDD ≤ 35% · WFE ≥ 0.2 · 트레이드 ≥ 30 · 심볼 과반",
   "rejections": [
-    { "strategy": "emaCross", "round": "2라운드", "interval": "4h", "result": "1/6" },
-    { "strategy": "emaCrossLS", "round": "3라운드", "interval": "4h", "result": "2/6" },
-    { "strategy": "volBreakout", "round": "확인", "interval": "1d", "result": "0/9" }
+    {
+      "strategy": "emaCross",
+      "round": "2라운드",
+      "interval": "4h",
+      "result": "1/6"
+    },
+    {
+      "strategy": "emaCrossLS",
+      "round": "3라운드",
+      "interval": "4h",
+      "result": "2/6"
+    },
+    {
+      "strategy": "volBreakout",
+      "round": "확인",
+      "interval": "1d",
+      "result": "0/9"
+    }
   ],
   "leaderboard": [
-    { "strategy": "volBreakout", "bestReturnPct": 20.81, "maxDrawdownPct": 24.8, "wfe": 0.08, "passes": 0, "total": 9 },
-    { "strategy": "emaCrossLS", "bestReturnPct": 23.8, "maxDrawdownPct": 70.0, "wfe": 0.04, "passes": 0, "total": 9 },
-    { "strategy": "emaCross", "bestReturnPct": 5.49, "maxDrawdownPct": 64.8, "wfe": 0.11, "passes": 0, "total": 9 },
-    { "strategy": "donchianBreakout", "bestReturnPct": 1.17, "maxDrawdownPct": 67.3, "wfe": 0.23, "passes": 0, "total": 9 },
-    { "strategy": "tsMomentum", "bestReturnPct": -6.27, "maxDrawdownPct": 53.0, "wfe": 0.02, "passes": 0, "total": 3 },
-    { "strategy": "portfolio", "bestReturnPct": -25.97, "maxDrawdownPct": 44.2, "wfe": -0.17, "passes": 0, "total": 3 },
-    { "strategy": "volTarget", "bestReturnPct": -31.65, "maxDrawdownPct": 53.1, "wfe": -0.12, "passes": 0, "total": 3 },
-    { "strategy": "ensemble", "bestReturnPct": -39.44, "maxDrawdownPct": 42.8, "wfe": -0.89, "passes": 0, "total": 3 },
-    { "strategy": "donchianLS", "bestReturnPct": -39.54, "maxDrawdownPct": 81.6, "wfe": 0.16, "passes": 0, "total": 9 },
-    { "strategy": "fundingLS", "bestReturnPct": -10.8, "maxDrawdownPct": 79.2, "wfe": -0.24, "passes": 0, "total": 9 },
-    { "strategy": "fundingReversion", "bestReturnPct": -25.14, "maxDrawdownPct": 49.7, "wfe": -0.02, "passes": 0, "total": 3 },
-    { "strategy": "rsiReversion", "bestReturnPct": -0.94, "maxDrawdownPct": 50.2, "wfe": -0.14, "passes": 0, "total": 9 }
-  ]
+    {
+      "strategy": "liquidationFade (총이익)",
+      "bestReturnPct": 24.4,
+      "maxDrawdownPct": 20.7,
+      "wfe": null,
+      "passes": 0,
+      "total": 3
+    },
+    {
+      "strategy": "stopRunReversal",
+      "bestReturnPct": -55.95,
+      "maxDrawdownPct": 56.9,
+      "wfe": null,
+      "passes": 0,
+      "total": 3
+    },
+    {
+      "strategy": "volBreakout",
+      "bestReturnPct": 20.81,
+      "maxDrawdownPct": 24.8,
+      "wfe": 0.08,
+      "passes": 0,
+      "total": 9
+    },
+    {
+      "strategy": "emaCrossLS",
+      "bestReturnPct": 23.8,
+      "maxDrawdownPct": 70.0,
+      "wfe": 0.04,
+      "passes": 0,
+      "total": 9
+    },
+    {
+      "strategy": "emaCross",
+      "bestReturnPct": 5.49,
+      "maxDrawdownPct": 64.8,
+      "wfe": 0.11,
+      "passes": 0,
+      "total": 9
+    },
+    {
+      "strategy": "donchianBreakout",
+      "bestReturnPct": 1.17,
+      "maxDrawdownPct": 67.3,
+      "wfe": 0.23,
+      "passes": 0,
+      "total": 9
+    },
+    {
+      "strategy": "tsMomentum",
+      "bestReturnPct": -6.27,
+      "maxDrawdownPct": 53.0,
+      "wfe": 0.02,
+      "passes": 0,
+      "total": 3
+    },
+    {
+      "strategy": "portfolio",
+      "bestReturnPct": -25.97,
+      "maxDrawdownPct": 44.2,
+      "wfe": -0.17,
+      "passes": 0,
+      "total": 3
+    },
+    {
+      "strategy": "volTarget",
+      "bestReturnPct": -31.65,
+      "maxDrawdownPct": 53.1,
+      "wfe": -0.12,
+      "passes": 0,
+      "total": 3
+    },
+    {
+      "strategy": "ensemble",
+      "bestReturnPct": -39.44,
+      "maxDrawdownPct": 42.8,
+      "wfe": -0.89,
+      "passes": 0,
+      "total": 3
+    },
+    {
+      "strategy": "donchianLS",
+      "bestReturnPct": -39.54,
+      "maxDrawdownPct": 81.6,
+      "wfe": 0.16,
+      "passes": 0,
+      "total": 9
+    },
+    {
+      "strategy": "fundingLS",
+      "bestReturnPct": -10.8,
+      "maxDrawdownPct": 79.2,
+      "wfe": -0.24,
+      "passes": 0,
+      "total": 9
+    },
+    {
+      "strategy": "fundingReversion",
+      "bestReturnPct": -25.14,
+      "maxDrawdownPct": 49.7,
+      "wfe": -0.02,
+      "passes": 0,
+      "total": 3
+    },
+    {
+      "strategy": "rsiReversion",
+      "bestReturnPct": -0.94,
+      "maxDrawdownPct": 50.2,
+      "wfe": -0.14,
+      "passes": 0,
+      "total": 9
+    }
+  ],
+  "headline": {
+    "title": "초단타에서 실재하는 엣지를 찾았으나 비용 아래에 있다",
+    "body": "liquidationFade(청산 캐스케이드 되받기)가 비용 0 기준 3심볼 × 2설정 = 6개 조합 전부 플러스. 15개 전략을 검증하며 심볼 간에 재현된 첫 신호다. 다만 거래당 엣지 3~4bps < 거래당 비용 6~7bps로 순익은 마이너스. 선별도를 올려도 엣지가 4bps에서 천장에 부딪힌다. 이 엣지가 살아남아 있는 이유가 바로 그것이다 — 소액 참여자의 거래비용보다 작아서 아무리 많이 발견돼도 사라지지 않는다. 수확하려면 메이커 리베이트를 받는 참여자 지위가 필요하다.",
+    "link": "docs/hft-research.md"
+  }
 }

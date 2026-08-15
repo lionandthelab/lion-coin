@@ -340,3 +340,26 @@ test('buildSiteModel: 심볼별 기록 길이가 다르면 짧은 쪽에 맞춘�
   const m = buildSiteModel(fixtureState(), [], p, NOW);
   assert.equal(m.paper.rows.find((r) => r.id === 'buyAndHold').curve.length, 1);
 });
+
+test('renderPage: 연구 헤드라인이 있으면 상단에 노출한다', () => {
+  const r = researchFixture();
+  r.headline = { title: '엣지는 있으나 비용 아래', body: '거래당 3bps 대 6bps', link: 'docs/x.md' };
+  const html = renderPage(buildSiteModel(fixtureState(), [], null, NOW, r), '2026-08-15T09:00:00Z');
+  assert.match(html, /엣지는 있으나 비용 아래/);
+  assert.match(html, /거래당 3bps 대 6bps/);
+});
+
+test('renderPage: 헤드라인의 HTML은 이스케이프된다', () => {
+  const r = researchFixture();
+  r.headline = { title: '<img onerror=x>', body: 'b', link: 'docs/x.md' };
+  const html = renderPage(buildSiteModel(fixtureState(), [], null, NOW, r), '2026-08-15T09:00:00Z');
+  assert.ok(!html.includes('<img onerror'));
+});
+
+test('renderPage: 헤드라인이 없어도 렌더링된다', () => {
+  const html = renderPage(
+    buildSiteModel(fixtureState(), [], null, NOW, researchFixture()),
+    '2026-08-15T09:00:00Z'
+  );
+  assert.match(html, /전략 연구 현황/);
+});
