@@ -169,10 +169,10 @@
       "id": "D1",
       "track": "D",
       "title": "바이낸스 klines 수집·정규화 모듈 (src/klines.js)",
-      "status": "pending",
+      "status": "done",
       "requires_human": false,
       "depends_on": [],
-      "notes": "GET /api/v3/klines — 인증 불필요. 파싱·검증은 TDD, fetch는 balance.js·fees.js와 같은 얇은 래퍼."
+      "notes": "2026-08-15 완료. src/klines.js — parseKlines/buildKlinesUrl를 TDD(테스트 17개), fetchKlines는 balance.js·fees.js와 같은 얇은 래퍼. 손상 캔들(high<low, open/close의 [low,high] 이탈, openTime 역순·중복)을 파싱 단계에서 차단하고, limit 범위 위반은 조용히 깎지 않고 RangeError. 실제 BTCUSDT 1h 응답으로 스모크 확인."
     },
     {
       "id": "D3",
@@ -187,10 +187,10 @@
       "id": "D2",
       "track": "D",
       "title": "백테스트 엔진 코어 — 다음 봉 시가 체결·수수료·슬리피지·자산곡선 (src/backtest.js)",
-      "status": "pending",
+      "status": "done",
       "requires_human": false,
       "depends_on": ["D1"],
-      "notes": "확장 제안서 §3-2 정직성 규약을 엔진 레벨에서 강제: i봉 종가 판단 → i+1봉 시가 체결(룩어헤드 차단), 비용은 진입·청산 양쪽 적용."
+      "notes": "2026-08-15 완료. src/backtest.js — runBacktest/summarize를 TDD(테스트 17개). 체결 루프가 항상 직전 봉 판단을 이번 봉 시가에 채우므로 호출 방식과 무관하게 룩어헤드가 불가능하고, 비용 기본값을 10bps·5bps로 둬 비용 누락 결과가 기본으로 나오지 않는다. 미정의 지표(트레이드 0건 승률, 손실 0건 손익비)는 null. 롱 온리 전량 진입/청산만 지원 — 분할 매매는 범위 밖. 실데이터 종단 확인: 매수보유 -1.77% vs 순수 가격변동 -1.62%, 차이 0.15%가 진입 수수료+슬리피지와 일치."
     },
     {
       "id": "D4",
