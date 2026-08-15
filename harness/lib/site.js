@@ -76,6 +76,21 @@ function renderMarkdown(md) {
   return out.join('\n');
 }
 
+// 후보 하나의 심볼 평균 수익률 추이. 심볼마다 기록 길이가 다를 수 있어
+// 가장 짧은 길이에 맞춘다 — 없는 구간을 0으로 채우면 곡선이 왜곡된다.
+function buildCurve(paperState, candidateId) {
+  const series = (paperState.symbols || [])
+    .map((sym) => (paperState.series?.[sym]?.history || []).map((h) => {
+      const row = (h.rows || []).find((r) => r.id === candidateId);
+      return row ? row.totalReturnPct : null;
+    }))
+    .filter((arr) => arr.length > 0 && arr.every((v) => v != null));
+
+  if (series.length === 0) return [];
+  const len = Math.min(...series.map((a) => a.length));
+  return Array.from({ length: len }, (_, i) => series.reduce((a, s) => a + s[i], 0) / series.length);
+}
+
 // 페이퍼 아레나 모델. 이 페이지는 공개 채널이므로 모의 수치가 실거래 성과로
 // 읽히지 않도록 라벨과 경과일수를 함께 싣는다 (정직성 규약 §3-2).
 function buildPaperModel(paperState, nowMs) {
@@ -91,11 +106,36 @@ function buildPaperModel(paperState, nowMs) {
     rows: summarizeArena(paperState).map((r) => ({
       ...r,
       note: (paperState.candidates.find((c) => c.id === r.id) || {}).note || '',
+      // 심볼별 자산곡선을 평균 내 하나의 추이로 만든다. 틱이 쌓이면 선이 자란다.
+      curve: buildCurve(paperState, r.id),
     })),
   };
 }
 
-function buildSiteModel(state, logFiles, paperState = null, nowMs = Date.now()) {
+// 인라인 SVG 스파크라인. 외부 라이브러리를 쓰지 않는다 — GitHub Pages 정적
+// 페이지이고, 차트 하나 때문에 CDN 의존을 들일 이유가 없다.
+function sparkline(values, { width = 120, height = 28 } = {}) {
+  if (!Array.isArray(values) || values.length < 2) return '';
+
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  // 값이 모두 같으면 분모가 0이 되어 좌표가 NaN이 된다 — 가운데 수평선으로 그린다.
+  const span = max - min || 1;
+  const stepX = width / (values.length - 1);
+
+  const points = values
+    .map((v, i) => {
+      const x = i * stepX;
+      const y = height - ((v - min) / span) * (height - 2) - 1;
+      return `${x.toFixed(1)},${y.toFixed(1)}`;
+    })
+    .join(' ');
+
+  const dir = values[values.length - 1] >= values[0] ? 'up' : 'down';
+  return `<svg class="spark ${dir}" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}" aria-hidden="true"><polyline points="${points}" fill="none" stroke="currentColor" stroke-width="1.5" /></svg>`;
+}
+
+function buildSiteModel(state, logFiles, paperState = null, nowMs = Date.now(), research = null) {
   const byId = Object.fromEntries(state.tasks.map((t) => [t.id, t]));
   const depsDone = (t) =>
     (t.depends_on || []).every((id) => byId[id] && byId[id].status === 'done');
@@ -148,6 +188,7 @@ function buildSiteModel(state, logFiles, paperState = null, nowMs = Date.now()) 
     nextTaskId: task ? task.id : null,
     humanActionIds: humanActions.map((t) => t.id),
     paper: buildPaperModel(paperState, nowMs),
+    research,
     logs,
   };
 }
@@ -178,12 +219,13 @@ function renderPaperSection(paper) {
   const body = !hasData
     ? '<p class="subtitle">아직 기록이 없습니다. 매 회차 1틱씩 쌓입니다.</p>'
     : `<table>
-<thead><tr><th>후보</th><th>평균</th><th>중앙</th><th>최악</th><th>최대 MDD</th><th>플러스</th></tr></thead>
+<thead><tr><th>후보</th><th>추이</th><th>평균</th><th>중앙</th><th>최악</th><th>최대 MDD</th><th>플러스</th></tr></thead>
 <tbody>
 ${paper.rows
   .map(
     (r) => `<tr>
 <td class="tid">${escapeHtml(r.id)}${r.note ? `<div class="notes">${escapeHtml(r.note)}</div>` : ''}</td>
+<td class="sparkcell">${sparkline(r.curve || [])}</td>
 <td class="${r.meanReturnPct != null && r.meanReturnPct < 0 ? 'neg' : ''}">${escapeHtml(signedPct(r.meanReturnPct))}</td>
 <td>${escapeHtml(signedPct(r.medianReturnPct))}</td>
 <td class="${r.worstReturnPct != null && r.worstReturnPct < 0 ? 'neg' : ''}">${escapeHtml(signedPct(r.worstReturnPct))}</td>
@@ -209,6 +251,58 @@ ${escapeHtml(paper.paperStart)} 시작 (${paper.days}일차) ·
 ${body}
 <p class="notes">평균만 보면 한 심볼의 성과가 나머지를 가리므로 <strong>최악 심볼</strong>과
 플러스 심볼 수를 함께 싣습니다. 낙폭은 평균이 아니라 최악값입니다 — 계좌가 실제로 견뎌야 하는 값이기 때문입니다.</p>
+</section>
+`;
+}
+
+function renderResearchSection(r) {
+  if (!r) return '';
+
+  const rejections = (r.rejections || [])
+    .map(
+      (x) =>
+        `<li><code>${escapeHtml(x.strategy)}</code> — ${escapeHtml(x.round)} 확인 시험 (${escapeHtml(x.interval)}) → <strong>${escapeHtml(x.result)} 기각</strong></li>`
+    )
+    .join('\n');
+
+  const board = (r.leaderboard || [])
+    .map(
+      (x) => `<tr>
+<td class="tid">${escapeHtml(x.strategy)}</td>
+<td class="${x.bestReturnPct < 0 ? 'neg' : ''}">${escapeHtml(signedPct(x.bestReturnPct))}</td>
+<td>${escapeHtml(`${x.maxDrawdownPct.toFixed(1)}%`)}</td>
+<td class="${x.wfe < 0.2 ? 'neg' : ''}">${escapeHtml(x.wfe == null ? 'n/a' : x.wfe.toFixed(2))}</td>
+<td>${x.passes}/${x.total}</td>
+</tr>`
+    )
+    .join('\n');
+
+  return `
+<h2>전략 연구 현황</h2>
+<div class="tiles">
+<div class="tile"><div class="tile-label">캠페인</div><div class="tile-value">${r.campaigns}</div></div>
+<div class="tile"><div class="tile-label">검증 전략</div><div class="tile-value">${r.strategiesTested}</div></div>
+<div class="tile"><div class="tile-label">검증 심볼</div><div class="tile-value">${r.symbolsTested}</div></div>
+<div class="tile"><div class="tile-label">게이트 통과</div><div class="tile-value">${r.gatePassed}</div></div>
+</div>
+<section class="card">
+<p>실거래 착수 게이트는 <strong>이어붙인 워크포워드 곡선</strong>으로 판정합니다 — 플러스 수익,
+매수보유 초과, MDD ≤ 35%, 워크포워드 효율(WFE) ≥ 0.2, 심볼 과반.
+전략별 최고 성적은 다음과 같습니다.</p>
+<table>
+<thead><tr><th>전략</th><th>최고 검증 수익</th><th>MDD</th><th>WFE</th><th>게이트</th></tr></thead>
+<tbody>
+${board}
+</tbody>
+</table>
+<h3>사전 등록 가설 기각 이력</h3>
+<p class="notes">탐색 라운드에서 1등이던 전략을 가설로 고정한 뒤 <strong>손대지 않은 새 심볼군</strong>에
+던진 결과입니다. 매번 무너졌습니다 — 탐색 순위는 엣지의 순위가 아니라 그 구간에 우연히 맞은 정도의 순위입니다.</p>
+<ul>${rejections}</ul>
+<p class="notes">상세:
+<a href="https://github.com/lionandthelab/lion-coin/blob/main/docs/walkforward-evaluation.md">워크포워드 평가</a> ·
+<a href="https://github.com/lionandthelab/lion-coin/blob/main/docs/research-campaign.md">연구 캠페인</a> ·
+갱신 ${escapeHtml(r.updatedAt)}</p>
 </section>
 `;
 }
@@ -323,6 +417,12 @@ summary { cursor: pointer; font-weight: 600; }
 .log-body pre { background: var(--plane); border: 1px solid var(--grid);
   border-radius: 8px; padding: 10px 12px; overflow-x: auto; font-size: 12.5px; }
 code { font-family: ui-monospace, SFMono-Regular, monospace; font-size: 0.92em; }
+svg.spark { display: block; }
+svg.spark.up { color: var(--good); }
+svg.spark.down { color: #c0392b; }
+@media (prefers-color-scheme: dark) { svg.spark.down { color: #ff7b6b; } }
+td.sparkcell { width: 130px; }
+h3 { font-size: 14.5px; margin: 20px 0 6px; }
 .paper-warn { background: color-mix(in srgb, var(--warning) 14%, transparent);
   border: 1px solid var(--warning); border-radius: 8px; padding: 10px 12px;
   font-size: 13px; margin: 0 0 12px; }
@@ -356,6 +456,7 @@ ${tiles}
 전체 전략은 저장소의 제안서(<code>비트코인_획득_전략_및_개발제안서.md</code>) 참고.</p>
 </section>
 
+${renderResearchSection(model.research)}
 ${renderPaperSection(model.paper)}
 <h2>작업 보드 (${model.progress.done}/${model.progress.total} 완료)</h2>
 <section class="card">
@@ -379,4 +480,4 @@ ${logSections || '<p class="subtitle">아직 로그가 없습니다.</p>'}
 `;
 }
 
-module.exports = { renderMarkdown, buildSiteModel, renderPage, escapeHtml };
+module.exports = { renderMarkdown, buildSiteModel, renderPage, escapeHtml, sparkline };

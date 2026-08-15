@@ -18,6 +18,11 @@ const paperState = fs.existsSync(paperPath)
   ? JSON.parse(fs.readFileSync(paperPath, 'utf8'))
   : null;
 
+const researchPath = path.join(ROOT, 'harness', 'research.json');
+const research = fs.existsSync(researchPath)
+  ? JSON.parse(fs.readFileSync(researchPath, 'utf8'))
+  : null;
+
 const logsDir = path.join(ROOT, 'logs');
 const logFiles = !fs.existsSync(logsDir)
   ? []
@@ -26,7 +31,10 @@ const logFiles = !fs.existsSync(logsDir)
       .filter((name) => /^\d{4}-\d{2}-\d{2}\.md$/.test(name))
       .map((name) => ({ name, content: fs.readFileSync(path.join(logsDir, name), 'utf8') }));
 
-const html = renderPage(buildSiteModel(state, logFiles, paperState), new Date().toISOString());
+const html = renderPage(
+  buildSiteModel(state, logFiles, paperState, Date.now(), research),
+  new Date().toISOString()
+);
 
 fs.mkdirSync(OUT_DIR, { recursive: true });
 fs.writeFileSync(path.join(OUT_DIR, 'index.html'), html);
