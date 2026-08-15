@@ -1,9 +1,9 @@
 {
   "updatedAt": "2026-08-15",
   "note": "워크포워드 연구 요약. 상세 수치와 재현 명령은 docs/walkforward-evaluation.md · docs/research-campaign.md 참조. 이 파일은 대시보드 렌더링용 큐레이션이며 원본 결과는 data/wf-*.json(gitignore)에 있다.",
-  "campaigns": 8,
+  "campaigns": 10,
   "strategiesTested": 15,
-  "symbolsTested": 24,
+  "symbolsTested": 52,
   "gatePassed": 0,
   "gate": "이어붙인 워크포워드 곡선: 플러스 수익 · 매수보유 초과 · MDD ≤ 35% · WFE ≥ 0.2 · 트레이드 ≥ 30 · 심볼 과반",
   "rejections": [
@@ -24,6 +24,12 @@
       "round": "확인",
       "interval": "1d",
       "result": "0/9"
+    },
+    {
+      "strategy": "liquidationFade(밈코인)",
+      "round": "확인",
+      "interval": "15m",
+      "result": "0/14"
     }
   ],
   "leaderboard": [
@@ -42,6 +48,14 @@
       "wfe": null,
       "passes": 0,
       "total": 3
+    },
+    {
+      "strategy": "liquidationFade (밈코인)",
+      "bestReturnPct": -36.12,
+      "maxDrawdownPct": 48.2,
+      "wfe": -0.63,
+      "passes": 0,
+      "total": 28
     },
     {
       "strategy": "volBreakout",
@@ -141,8 +155,8 @@
     }
   ],
   "headline": {
-    "title": "초단타에서 실재하는 엣지를 찾았으나 비용 아래에 있다",
-    "body": "liquidationFade(청산 캐스케이드 되받기)가 비용 0 기준 3심볼 × 2설정 = 6개 조합 전부 플러스. 15개 전략을 검증하며 심볼 간에 재현된 첫 신호다. 다만 거래당 엣지 3~4bps < 거래당 비용 6~7bps로 순익은 마이너스. 선별도를 올려도 엣지가 4bps에서 천장에 부딪힌다. 이 엣지가 살아남아 있는 이유가 바로 그것이다 — 소액 참여자의 거래비용보다 작아서 아무리 많이 발견돼도 사라지지 않는다. 수확하려면 메이커 리베이트를 받는 참여자 지위가 필요하다.",
-    "link": "docs/hft-research.md"
+    "title": "밈코인은 엣지를 키우지 않고 부호를 뒤집었다",
+    "body": "심볼을 3개에서 52개로 넓혔다. liquidationFade의 거래당 총이익 엣지는 메이저에서 +3.3bps(6/6 플러스)였으나 밈코인에서는 탐색 -17.9bps(3/14) · 확인 -8.9bps(5/14)로 부호가 뒤집힌다. 이유는 보인다 — 검증 구간 밈코인 28종의 매수보유가 -47%~-94%인 구조적 하락장이었고, 거기서 급락은 일시적 강제 매도가 아니라 재평가의 한 조각이다. 되받으면 떨어지는 칼을 반복해 잡는다. 이번 확인 라운드는 이 프로젝트에서 사전 등록 가설이 처음으로 유지된 사례다(다만 부정적 결론 쪽이다).",
+    "link": "docs/meme-universe.md"
   }
 }
