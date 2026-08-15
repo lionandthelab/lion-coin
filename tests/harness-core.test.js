@@ -8,6 +8,8 @@ const {
   parseBlinkWallets,
   validateBlinkKeyFormat,
   logFileName,
+  parseCoinosWallet,
+  validateCoinosTokenFormat,
 } = require('../harness/lib/core');
 
 // ---- pickNextTask ----
@@ -178,4 +180,53 @@ test('logFileName: Asia/Seoul 기준 날짜로 파일명을 만든다 (UTC 자�
   // UTC 16:00 = KST 익일 01:00
   assert.equal(logFileName(new Date('2026-07-14T16:00:00Z')), '2026-07-15.md');
   assert.equal(logFileName(new Date('2026-07-14T02:00:00Z')), '2026-07-14.md');
+});
+
+// ---- Coinos 지갑 응답 파싱 ----
+// Blink가 한국 번호 온보딩을 막아 대안으로 전환. Coinos는 사용자명+비밀번호만으로
+// 가입되고 KYC가 없으며, GET /api/me가 잔액을 sats로 돌려준다.
+// (routes/users.ts의 me 핸들러가 user.balance를 채운다 — 오픈소스에서 확인)
+
+test('parseCoinosWallet: balance를 sats로 읽는다', () => {
+  assert.equal(parseCoinosWallet({ username: 'demo', balance: 1234 }), 1234);
+});
+
+test('parseCoinosWallet: 잔액 0은 정상값이다 (아직 못 받은 상태)', () => {
+  assert.equal(parseCoinosWallet({ username: 'demo', balance: 0 }), 0);
+});
+
+test('parseCoinosWallet: balance가 없거나 숫자가 아니면 TypeError', () => {
+  assert.throws(() => parseCoinosWallet({ username: 'demo' }), TypeError);
+  assert.throws(() => parseCoinosWallet({ balance: '1234' }), TypeError);
+  assert.throws(() => parseCoinosWallet(null), TypeError);
+});
+
+// 토큰 형식 점검 — Blink의 blink_ 접두사처럼 즉시 걸러낼 수 있는 실수를 잡는다.
+// 다만 Coinos 토큰은 JWT라 접두사가 없으므로 구조로 판단한다.
+test('validateCoinosTokenFormat: JWT 3구획 형식을 통과시킨다', () => {
+  const jwt = 'eyJhbGciOiJIUzI1NiJ9.eyJpZCI6ImFiYyJ9.c2lnbmF0dXJl';
+  assert.deepEqual(validateCoinosTokenFormat(jwt), { valid: true });
+});
+
+test('validateCoinosTokenFormat: 비어 있으면 사유와 함께 거부', () => {
+  assert.equal(validateCoinosTokenFormat('').valid, false);
+  assert.equal(validateCoinosTokenFormat(undefined).valid, false);
+});
+
+test('validateCoinosTokenFormat: 앞뒤 공백이 섞이면 거부 (복붙 사고)', () => {
+  const r = validateCoinosTokenFormat(' eyJhbGciOiJIUzI1NiJ9.eyJpZCI6ImFiYyJ9.sig ');
+  assert.equal(r.valid, false);
+  assert.match(r.reason, /공백/);
+});
+
+test('validateCoinosTokenFormat: 구획이 3개가 아니면 거부', () => {
+  const r = validateCoinosTokenFormat('not-a-jwt');
+  assert.equal(r.valid, false);
+  assert.match(r.reason, /3/);
+});
+
+test('validateCoinosTokenFormat: Blink 키를 잘못 넣으면 그 사실을 알려준다', () => {
+  const r = validateCoinosTokenFormat('blink_abc123');
+  assert.equal(r.valid, false);
+  assert.match(r.reason, /Blink/);
 });
