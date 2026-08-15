@@ -295,7 +295,109 @@ function ensemble(candles, params = {}) {
   return guard(candles, raw, params);
 }
 
+// 테스트·구성용 기준 전략. always는 항상 전량 롱(invert면 전량 숏), never는 항상 현금.
+function always(candles, params = {}) {
+  const sign = params.invert ? -1 : 1;
+  return guard(candles, candles.map(() => sign), params);
+}
+
+function never(candles, params = {}) {
+  return guard(candles, candles.map(() => 0), params);
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// 사이징 계층 — 신호가 아니라 "얼마나 실을지"를 정한다.
+//
+// 연속 노출 엔진([-1,1])이 열리면서 처음 시도할 수 있게 된 레버다. 지금까지는
+// 전량 진입/청산만 가능해 이 축을 아예 못 건드렸다.
+// ────────────────────────────────────────────────────────────────────────────
+
+// 실현 변동성이 목표보다 크면 노출을 줄이고, 작으면 늘린다(1 상한).
+// 같은 신호라도 변동성이 클 때 덜 싣는 것만으로 위험조정 성과가 달라진다.
+function volTarget(candles, params = {}) {
+  const {
+    inner = 'emaCrossLS',
+    innerParams = {},
+    volLookback = 30,
+    targetVolPct = 40, // 연율 기준 목표 변동성
+    periodsPerYear = 2190, // 4h 기본값
+  } = params;
+  assertPositiveInt(volLookback, 'volLookback');
+  if (!(targetVolPct > 0)) {
+    throw new RangeError(`targetVolPct는 양수여야 합니다: ${targetVolPct}`);
+  }
+
+  const fn = STRATEGIES[inner];
+  if (!fn) throw new RangeError(`알 수 없는 내부 전략: ${inner}`);
+  // 내부 전략은 가드 없이 방향만 낸다 — 가드는 사이징 후 최종 노출에 한 번만 씌운다.
+  const signal = fn(candles, { ...innerParams, atrStopMult: null, dailyLossLimitPct: null });
+
+  const price = closes(candles);
+  const raw = new Array(candles.length).fill(0);
+
+  for (let i = volLookback; i < candles.length; i += 1) {
+    const rets = [];
+    for (let k = i - volLookback + 1; k <= i; k += 1) {
+      if (price[k - 1] > 0) rets.push(price[k] / price[k - 1] - 1);
+    }
+    if (rets.length < 2) continue;
+    const avg = rets.reduce((a, b) => a + b, 0) / rets.length;
+    const variance = rets.reduce((a, r) => a + (r - avg) ** 2, 0) / (rets.length - 1);
+    const annualVolPct = Math.sqrt(variance) * Math.sqrt(periodsPerYear) * 100;
+    if (!(annualVolPct > 0)) continue;
+
+    // 상한 1 — 레버리지는 들이지 않는다.
+    const scale = Math.min(1, targetVolPct / annualVolPct);
+    raw[i] = signal[i] * scale;
+  }
+
+  return guard(candles, raw, params);
+}
+
+// 전략 포트폴리오 — 구성원 노출의 가중 평균.
+//
+// 앙상블(다수결)과 다르다. 앙상블은 합의될 때만 전량 진입하지만, 포트폴리오는
+// 자본을 나눠 싣는다. 서로 다른 국면에서 틀리는 전략들을 섞으면 개별 성과가
+// 약해도 위험조정 성과는 나아질 수 있다 — 분산은 검증된 거의 유일한 공짜 점심이다.
+function portfolio(candles, params = {}) {
+  const {
+    members = [
+      { strategy: 'emaCrossLS', params: {}, weight: 1 },
+      { strategy: 'donchianLS', params: {}, weight: 1 },
+      { strategy: 'tsMomentum', params: {}, weight: 1 },
+    ],
+  } = params;
+
+  if (!Array.isArray(members) || members.length === 0) {
+    throw new RangeError('portfolio에는 최소 1개의 구성원이 필요합니다');
+  }
+  const totalWeight = members.reduce((a, m) => a + (m.weight ?? 1), 0);
+  if (!(totalWeight > 0)) {
+    throw new RangeError(`가중치 합이 0보다 커야 합니다: ${totalWeight}`);
+  }
+
+  const legs = members.map((m) => {
+    const fn = STRATEGIES[m.strategy];
+    if (!fn) throw new RangeError(`알 수 없는 구성원 전략: ${m.strategy}`);
+    return {
+      weight: m.weight ?? 1,
+      positions: fn(candles, { ...(m.params || {}), atrStopMult: null, dailyLossLimitPct: null }),
+    };
+  });
+
+  const raw = candles.map((_, i) => {
+    const sum = legs.reduce((a, l) => a + l.weight * l.positions[i], 0);
+    return sum / totalWeight;
+  });
+
+  return guard(candles, raw, params);
+}
+
 const STRATEGIES = {
+  always,
+  never,
+  volTarget,
+  portfolio,
   emaCross,
   rsiReversion,
   donchianBreakout,
@@ -309,6 +411,10 @@ const STRATEGIES = {
 };
 
 module.exports = {
+  always,
+  never,
+  volTarget,
+  portfolio,
   emaCross,
   rsiReversion,
   donchianBreakout,

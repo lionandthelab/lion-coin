@@ -49,7 +49,42 @@ const DATA_DIR = path.join(__dirname, '..', 'data');
 const FIXED_RISK = { atrStopMult: 3, dailyLossLimitPct: 5 };
 const withRisk = (rows) => rows.map((p) => ({ ...p, ...FIXED_RISK }));
 
+const PPY = PERIODS_PER_YEAR[INTERVAL] || 2190;
+
 const GRIDS = {
+  // 사이징 계층 — 연속 노출 엔진이 열리면서 처음 시도하는 축.
+  volTarget: withRisk(
+    grid({
+      inner: ['emaCrossLS', 'donchianLS', 'tsMomentum'],
+      targetVolPct: [20, 30, 40],
+      volLookback: [30, 60],
+    }).map((p) => ({ ...p, periodsPerYear: PPY }))
+  ),
+  portfolio: withRisk(
+    [
+      [
+        { strategy: 'emaCrossLS', params: {}, weight: 1 },
+        { strategy: 'donchianLS', params: {}, weight: 1 },
+        { strategy: 'tsMomentum', params: {}, weight: 1 },
+      ],
+      [
+        { strategy: 'emaCrossLS', params: { fast: 20, slow: 100 } , weight: 1 },
+        { strategy: 'volBreakout', params: {}, weight: 1 },
+        { strategy: 'fundingLS', params: {}, weight: 1 },
+      ],
+      [
+        { strategy: 'emaCrossLS', params: {}, weight: 2 },
+        { strategy: 'volBreakout', params: {}, weight: 1 },
+        { strategy: 'rsiReversion', params: {}, weight: 1 },
+        { strategy: 'fundingLS', params: {}, weight: 1 },
+      ],
+      [
+        { strategy: 'tsMomentum', params: { lookback: 48 }, weight: 1 },
+        { strategy: 'tsMomentum', params: { lookback: 168 }, weight: 1 },
+        { strategy: 'tsMomentum', params: { lookback: 336 }, weight: 1 },
+      ],
+    ].map((members) => ({ members }))
+  ),
   emaCross: withRisk(grid({ fast: [8, 12, 20, 30], slow: [26, 50, 100, 200] }).filter((p) => p.fast < p.slow)),
   emaCrossLS: withRisk(grid({ fast: [8, 12, 20, 30], slow: [26, 50, 100, 200] }).filter((p) => p.fast < p.slow)),
   rsiReversion: withRisk(grid({ rsiPeriod: [7, 14, 21], buyBelow: [20, 30], sellAbove: [70, 80] })),
