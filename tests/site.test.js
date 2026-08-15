@@ -1,7 +1,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 
-const { renderMarkdown, buildSiteModel, renderPage } = require('../harness/lib/site');
+const { renderMarkdown, buildSiteModel, renderPage, sparkline } = require('../harness/lib/site');
 
 // ---- renderMarkdown (일일 로그 전용 최소 변환기) ----
 
@@ -236,4 +236,107 @@ test('renderPage: 후보 id의 HTML은 이스케이프된다', () => {
     '2026-08-15T09:00:00Z'
   );
   assert.ok(!html.includes('<img onerror'));
+});
+
+// ---- 연구 현황 섹션 + 자산곡선 (상용 수준 대시보드) ----
+
+function researchFixture() {
+  return {
+    updatedAt: '2026-08-15',
+    campaigns: 5,
+    strategiesTested: 12,
+    symbolsTested: 24,
+    gatePassed: 0,
+    rejections: [
+      { strategy: 'emaCross', round: '2라운드', result: '1/6', interval: '4h' },
+      { strategy: 'volBreakout', round: '확인', result: '0/9', interval: '1d' },
+    ],
+    leaderboard: [
+      { strategy: 'volBreakout', bestReturnPct: 20.81, maxDrawdownPct: 24.8, wfe: 0.08, passes: 0, total: 9 },
+      { strategy: 'portfolio', bestReturnPct: -25.97, maxDrawdownPct: 44.2, wfe: -0.17, passes: 0, total: 3 },
+    ],
+  };
+}
+
+test('buildSiteModel: 연구 요약이 없으면 research는 null', () => {
+  assert.equal(buildSiteModel(fixtureState(), []).research, null);
+});
+
+test('buildSiteModel: 연구 요약을 그대로 싣는다', () => {
+  const m = buildSiteModel(fixtureState(), [], null, NOW, researchFixture());
+  assert.equal(m.research.gatePassed, 0);
+  assert.equal(m.research.rejections.length, 2);
+});
+
+test('renderPage: 연구 현황에 게이트 통과 수와 기각 이력을 노출한다', () => {
+  const html = renderPage(
+    buildSiteModel(fixtureState(), [], null, NOW, researchFixture()),
+    '2026-08-15T09:00:00Z'
+  );
+  assert.match(html, /전략 연구 현황/);
+  assert.match(html, /게이트 통과/);
+  assert.match(html, /volBreakout/);
+  assert.match(html, /0\/9/);
+});
+
+test('renderPage: 연구 요약의 전략명은 이스케이프된다', () => {
+  const r = researchFixture();
+  r.leaderboard[0].strategy = '<img onerror=x>';
+  const html = renderPage(
+    buildSiteModel(fixtureState(), [], null, NOW, r),
+    '2026-08-15T09:00:00Z'
+  );
+  assert.ok(!html.includes('<img onerror'));
+});
+
+// ---- sparkline ----
+
+test('sparkline: 값 배열을 SVG 폴리라인으로 만든다', () => {
+  const svg = sparkline([100, 110, 90, 120]);
+  assert.match(svg, /<svg/);
+  assert.match(svg, /polyline/);
+});
+
+test('sparkline: 값이 2개 미만이면 빈 문자열 (선을 그릴 수 없다)', () => {
+  assert.equal(sparkline([100]), '');
+  assert.equal(sparkline([]), '');
+});
+
+test('sparkline: 모든 값이 같아도 NaN 좌표를 내지 않는다 (0으로 나누기)', () => {
+  const svg = sparkline([100, 100, 100]);
+  assert.ok(!svg.includes('NaN'), svg);
+});
+
+test('sparkline: 마지막 값이 첫 값보다 낮으면 하락 색상을 쓴다', () => {
+  assert.match(sparkline([100, 90]), /class="spark down"/);
+  assert.match(sparkline([100, 110]), /class="spark up"/);
+});
+
+test('renderPage: 페이퍼 기록이 2틱 이상이면 자산곡선을 그린다', () => {
+  const p = paperFixture();
+  for (const sym of ['BTCUSDT', 'ETHUSDT']) {
+    p.series[sym].history.push({
+      candleOpenTime: 14400000,
+      close: 64000,
+      rows: [
+        { id: 'buyAndHold', position: 1, totalReturnPct: 7, maxDrawdownPct: 2, tradeCount: 0 },
+        { id: 'emaCrossLS', position: -1, totalReturnPct: -5, maxDrawdownPct: 8, tradeCount: 4 },
+      ],
+    });
+  }
+  const html = renderPage(buildSiteModel(fixtureState(), [], p, NOW), '2026-08-15T09:00:00Z');
+  assert.match(html, /<svg class="spark/);
+});
+
+// 한 심볼이 네트워크 오류로 틱을 건너뛰면 기록 길이가 어긋난다. 없는 구간을
+// 0으로 채우면 곡선이 왜곡되므로 가장 짧은 길이에 맞춘다.
+test('buildSiteModel: 심볼별 기록 길이가 다르면 짧은 쪽에 맞춘다', () => {
+  const p = paperFixture();
+  p.series.BTCUSDT.history.push({
+    candleOpenTime: 14400000,
+    close: 64000,
+    rows: [{ id: 'buyAndHold', position: 1, totalReturnPct: 7, maxDrawdownPct: 2, tradeCount: 0 }],
+  });
+  const m = buildSiteModel(fixtureState(), [], p, NOW);
+  assert.equal(m.paper.rows.find((r) => r.id === 'buyAndHold').curve.length, 1);
 });
