@@ -292,6 +292,17 @@
       "notes": "2026-08-15 완료 — **게이트 통과 전략 없음**. src/research.js(판정 기준 독점, 테스트 12개) + scripts/research.js(npm run research). 전략 10종 × 심볼 15개 × 시간대 3종. 핵심 결과는 개별 수치가 아니라 **재현 실패**: 1라운드(BTC/ETH/SOL 4h)에서 emaCross가 2/3 통과했으나 사전 등록 후 새 심볼 6개에 던지니 1/6(-1.45%)로 기각. 2라운드에서 올라온 emaCrossLS도 3라운드 새 심볼 6개에서 2/6(-5.47%)로 기각. 1d 확장에서도 최상위가 4/9로 과반 미달. **교훈: 전략·심볼·시간대를 늘리는 것은 파라미터 과최적화보다 알아채기 어렵다 — 다각도 연구처럼 보이기 때문. 통과할 때까지 조합을 늘리지 말 것.** 상세: docs/research-campaign.md."
     },
     {
+      "id": "D10",
+      "track": "D",
+      "title": "워크포워드 이어붙인 곡선 평가 + WF 게이트",
+      "status": "done",
+      "requires_human": false,
+      "depends_on": [
+        "D9"
+      ],
+      "notes": "2026-08-15 완료 — **심볼 과반 통과 전략 없음**. 사용자 결정으로 판정 근거를 페이퍼 30일에서 워크포워드로 교체(확장 제안서 §4-1 개정). src/research.js에 stitchSegments·curveMetrics·walkForwardEfficiency·evaluateWfGate 추가(테스트 16개), buildFolds에 rolling 모드. 폴드 수익률 산술평균은 복리와 경계 낙폭을 놓쳐 실제보다 좋게 보였다 — 이어붙이니 emaCross +2.82%→-3.19%, donchianLS -6.23%→-46.05%. **모든 구간에서 최다 탈락 사유는 WFE 미달**이고 측정값이 -0.1~+0.08에 몰려 있다(학습 성과가 검증에서 평균 0만큼 재현). 1d에서 총수익 +70%대가 나와도 같은 구간 매수보유가 더 커서 시장 몫이지 전략 몫이 아니다. MDD 상한을 무제한으로 풀어도 통과 수가 안 바뀜 — 기준이 빡빡해서가 아니다. 유일한 예외 volBreakout(MDD 24%, WFE 0.25, 1d 1/9) — 다음 단계는 새 심볼군 확인 라운드. 상세: docs/walkforward-evaluation.md."
+    },
+    {
       "id": "E1",
       "track": "E",
       "title": "페이퍼 트레이딩 러너 — 일일 캔들 갱신 → 신호 → 가상 체결 기록",
