@@ -363,3 +363,8 @@ test('renderPage: 헤드라인이 없어도 렌더링된다', () => {
   );
   assert.match(html, /전략 연구 현황/);
 });
+
+test('renderPage: 전략 랩으로 가는 링크가 있다', () => {
+  const html = renderPage(buildSiteModel(fixtureState(), []), '2026-08-15T09:00:00Z');
+  assert.match(html, /href="\.\/lab\.html"/);
+});

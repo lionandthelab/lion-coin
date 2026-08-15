@@ -447,7 +447,9 @@ footer a { color: var(--accent); text-decoration: none; }
 <main>
 <h1>Satoshi Zero-to-One</h1>
 <p class="subtitle">외부 구매 없이, 직접 만든 제품을 팔아 라이트닝으로 첫 1,000원어치 비트코인을 수령할 때까지 —
-매일 스스로 한 회차씩 전진하는 자율 하네스. <a href="https://github.com/lionandthelab/lion-coin">GitHub 저장소</a></p>
+매일 스스로 한 회차씩 전진하는 자율 하네스.
+<a href="./lab.html"><strong>전략 랩 열기 →</strong></a> ·
+<a href="https://github.com/lionandthelab/lion-coin">GitHub 저장소</a></p>
 
 <section class="card">
 <div class="hero-label">${g.achieved ? '목표 달성 — 실수령 sats' : '실수령 sats (자가 입금 제외)'}</div>

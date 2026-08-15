@@ -26,6 +26,8 @@ jobs:
         run: npm ci && npm test
       - name: Build dashboard
         run: node scripts/build-site.js
+      - name: Build strategy lab
+        run: node scripts/build-lab.js
       - uses: actions/upload-pages-artifact@v3
         with:
           path: _site
