@@ -21,11 +21,17 @@ const { planBracket } = require('../src/bracket');
 const { candleChart } = require('../src/chart');
 const engine = require('../src/engine');
 const trade = require('../src/bithumb-trade');
+const { FIELDS, validateConfigPatch } = require('../src/trading-config');
 
 const PORT = Number(process.env.DASHBOARD_PORT || 8787);
 const CONFIG_PATH = path.join(__dirname, '..', 'harness', 'trading.json');
 
-const config = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
+let config = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
+
+// 화면에 내보낼 설정만 추린다 — note·rationale은 문서용이라 편집 대상이 아니다.
+function publicConfig() {
+  return Object.fromEntries(Object.keys(FIELDS).map((k) => [k, config[k]]));
+}
 
 // 실거래 승인은 환경변수로만 켤 수 있다. 화면에서 켤 수 없게 한 것이 요점이다.
 const LIVE_APPROVED = process.env.BITHUMB_LIVE === '1';
@@ -275,22 +281,9 @@ const server = http.createServer(async (req, res) => {
   if (url.pathname === '/api/state') {
     json(res, 200, {
       summary: engine.summarize(state),
-      config: {
-        // 설정만 노출한다. 키는 여기 없다.
-        interval: config.interval,
-        maxSymbols: config.maxSymbols,
-        lookback: config.lookback,
-        volMult: config.volMult,
-        takeProfitBps: config.takeProfitBps,
-        stopLossBps: config.stopLossBps,
-        feeBps: config.feeBps,
-        capitalKrw: config.capitalKrw,
-        riskPct: config.riskPct,
-        scanIntervalSec: config.scanIntervalSec,
-        minTradeValue24h: config.minTradeValue24h,
-        maxSpreadBps: config.maxSpreadBps,
-        maxBreakevenWinRate: config.maxBreakevenWinRate,
-      },
+      // 설정만 노출한다. 키는 여기 없다.
+      config: publicConfig(),
+      fields: FIELDS,
       liveApproved: LIVE_APPROVED,
       hasKeys: HAS_KEYS,
       orderDispatchReady: true,
@@ -307,6 +300,33 @@ const server = http.createServer(async (req, res) => {
       signals: state.signals.slice(-30).reverse().map((g, i) => (i < 8 ? g : { ...g, chart: null })),
       errors: state.errors.slice(-10).reverse(),
     });
+    return;
+  }
+
+  if (url.pathname === '/api/config' && req.method === 'POST') {
+    // 포지션이 열려 있는 동안 자본·손절을 바꾸면 이미 나간 주문과 앞뒤가 안 맞는다.
+    if (positions.size > 0) {
+      json(res, 409, { ok: false, errors: ['열린 포지션이 있어 설정을 바꿀 수 없습니다. 청산 후 다시 시도하세요.'] });
+      return;
+    }
+
+    const patch = await readBody(req);
+    const r = validateConfigPatch(patch, config);
+    if (!r.ok) {
+      json(res, 400, { ok: false, errors: r.errors });
+      return;
+    }
+
+    // 문서 필드(note·rationale)는 그대로 두고 값만 갈아끼운다.
+    config = { ...config, ...r.config };
+    fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2) + '\n');
+
+    // 스캔 주기가 바뀌었으면 타이머를 다시 건다.
+    if (state.mode !== 'stopped') {
+      stopLoop();
+      startLoop();
+    }
+    json(res, 200, { ok: true, config: publicConfig() });
     return;
   }
 

@@ -47,6 +47,12 @@ tr:last-child td { border-bottom:none; }
   border:1px solid var(--warning); border-radius:8px; padding:10px 12px; font-size:13px; margin:0 0 14px; }
 .notes { color:var(--muted); font-size:12.5px; }
 .empty { color:var(--muted); font-size:13px; padding:10px 0; }
+.cfggrid { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:12px; }
+.cfggrid label { display:block; font-size:12px; color:var(--ink-2); margin-bottom:3px; }
+.cfggrid input, .cfggrid select { width:100%; padding:7px 9px; border:1px solid var(--grid);
+  border-radius:6px; background:var(--plane); color:var(--ink); font:inherit; font-size:13.5px; }
+.cfggrid .unit { color:var(--muted); font-size:11.5px; }
+.cfgerr { color:var(--bad); font-size:12.5px; }
 .sig { border:1px solid var(--hairline); border-radius:10px; padding:14px; margin-bottom:12px; }
 .sig h3 { margin:0 0 2px; font-size:15px; font-family:ui-monospace,monospace; }
 .sig .meta { color:var(--ink-2); font-size:12.5px; margin-bottom:10px; }
@@ -88,6 +94,15 @@ svg.chart .volavg { stroke:var(--accent); stroke-width:1; stroke-dasharray:3 3; 
 
 <h2>포착된 후보 <span class="notes" id="topCount"></span></h2>
 <div class="card"><div id="top"></div></div>
+
+<h2>설정 <span class="notes">— 저장하면 즉시 반영됩니다</span></h2>
+<div class="card">
+  <div class="cfggrid" id="cfgForm"></div>
+  <div id="bePreview" class="notes" style="margin-top:12px"></div>
+  <button id="btnSave" class="start" style="margin-top:12px">설정 저장</button>
+  <button id="btnReset" class="stop" style="margin-top:12px">되돌리기</button>
+  <div class="notes" id="cfgNote" style="margin-top:10px"></div>
+</div>
 
 <h2>열린 포지션</h2>
 <div class="card"><div id="positions"></div></div>
@@ -180,6 +195,8 @@ async function refresh() {
     { label: '24h대금', num: true, get: function (r) { return (r.tradeValue24h / 1e8).toFixed(0) + '억'; } },
   ]);
 
+  renderConfig(s);
+
   $('positions').innerHTML = table(s.positions || [], [
     { label: '종목', get: function (r) { return '<span class="sym">' + esc(r.symbol) + '</span>'; } },
     { label: '진입', get: function (r) { return new Date(r.entryAt).toLocaleTimeString('ko-KR'); } },
@@ -239,6 +256,79 @@ async function refresh() {
     { label: '내용', get: function (r) { return esc(r.message); } },
   ]);
 }
+
+var cfgDirty = false;
+var cfgFields = null;
+
+function renderConfig(s) {
+  cfgFields = s.fields;
+  // 사용자가 편집 중이면 화면을 덮어쓰지 않는다 — 3초마다 입력이 지워지면 못 쓴다.
+  if (cfgDirty) { updateBePreview(s); return; }
+
+  $('cfgForm').innerHTML = Object.entries(s.fields).map(function (e) {
+    var k = e[0], f = e[1], v = s.config[k];
+    var input = f.type === 'enum'
+      ? '<select data-k="' + k + '">' + f.options.map(function (o) {
+          return '<option' + (o === v ? ' selected' : '') + '>' + o + '</option>';
+        }).join('') + '</select>'
+      : '<input type="number" data-k="' + k + '" value="' + v + '"' +
+        (f.type === 'int' ? ' step="1"' : ' step="any"') + '>';
+    return '<div><label>' + f.label + (f.unit ? ' <span class="unit">(' + f.unit + ')</span>' : '') +
+      '</label>' + input + '</div>';
+  }).join('');
+
+  $('cfgForm').querySelectorAll('input,select').forEach(function (el) {
+    el.addEventListener('input', function () { cfgDirty = true; updateBePreview(s); });
+  });
+  updateBePreview(s);
+}
+
+function readForm() {
+  var patch = {};
+  $('cfgForm').querySelectorAll('input,select').forEach(function (el) {
+    var k = el.dataset.k;
+    patch[k] = cfgFields[k].type === 'enum' ? el.value : Number(el.value);
+  });
+  return patch;
+}
+
+// 익절·손절·수수료를 바꾸는 즉시 손익분기 승률이 어떻게 변하는지 보여준다.
+// 이 숫자가 이 시스템에서 가장 중요한 값이라, 저장 전에 보이는 것이 맞다.
+function updateBePreview() {
+  var p = readForm();
+  var worst = p.feeBps * 2 + p.maxSpreadBps;
+  var be = (p.stopLossBps + worst) / (p.takeProfitBps + p.stopLossBps);
+  var best = (p.stopLossBps + p.feeBps * 2) / (p.takeProfitBps + p.stopLossBps);
+  var bad = be > 1 || be > p.maxBreakevenWinRate;
+  $('bePreview').innerHTML =
+    '손익분기 승률 — 스프레드 0일 때 <strong>' + (best * 100).toFixed(1) + '%</strong>, ' +
+    '스프레드 상한(' + p.maxSpreadBps + 'bps)일 때 <strong class="' + (bad ? 'neg' : 'pos') + '">' +
+    (be * 100).toFixed(1) + '%</strong>' +
+    (be > 1 ? ' — <span class="neg">100%를 넘어 어떤 승률로도 수익이 불가능합니다.</span>'
+            : be > p.maxBreakevenWinRate ? ' — <span class="neg">상한(' +
+              (p.maxBreakevenWinRate * 100).toFixed(0) + '%)을 넘어 후보가 거의 나오지 않습니다.</span>' : '');
+}
+
+$('btnSave').addEventListener('click', async function () {
+  var r = await (await fetch('/api/config', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(readForm()),
+  })).json();
+  if (r.ok) {
+    cfgDirty = false;
+    $('cfgNote').innerHTML = '<span class="pos">저장했습니다.</span> 다음 스캔부터 적용됩니다.';
+    refresh();
+  } else {
+    $('cfgNote').innerHTML = '<div class="cfgerr">' +
+      r.errors.map(function (x) { return '· ' + esc(x); }).join('<br>') + '</div>';
+  }
+});
+
+$('btnReset').addEventListener('click', function () {
+  cfgDirty = false;
+  $('cfgNote').textContent = '';
+  refresh();
+});
 
 async function setMode(mode, confirmLive) {
   var r = await (await fetch('/api/mode', {
