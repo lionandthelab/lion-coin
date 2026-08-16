@@ -82,12 +82,18 @@ svg.chart .volavg { stroke:var(--accent); stroke-width:1; stroke-dasharray:3 3; 
 <div class="card">
   <button id="btnStart" class="start">▶ 시작 (모의)</button>
   <button id="btnStop" class="stop">■ 정지</button>
-  <button id="btnLive" class="live">⚠ 실거래 전환 (주문 전송 미구현)</button>
+  <button id="btnLive" class="live">⚠ 실거래 시작</button>
   <div class="notes" style="margin-top:10px" id="ctrlNote"></div>
 </div>
 
 <h2>포착된 후보 <span class="notes" id="topCount"></span></h2>
 <div class="card"><div id="top"></div></div>
+
+<h2>열린 포지션</h2>
+<div class="card"><div id="positions"></div></div>
+
+<h2>전송된 주문 <span class="notes">— 실거래 모드에서만 채워집니다</span></h2>
+<div class="card"><div id="orders"></div></div>
 
 <h2>포착 순간 <span class="notes">— 왜 잡혔는지 그림으로</span></h2>
 <div id="charts"></div>
@@ -134,10 +140,7 @@ async function refresh() {
     (s.config.takeProfitBps / 100) + '% / 손절 -' + (s.config.stopLossBps / 100) + '% · 수수료 ' +
     s.config.feeBps + 'bps · 자본 ' + money(s.config.capitalKrw) + '원';
 
-  $('banner').innerHTML = !s.orderDispatchReady
-    ? '<strong>거래 직전 단계입니다.</strong> 시장을 순환하며 돌파를 포착하고 진입·익절·손절을 설계하는 것까지 ' +
-      '동작합니다. <strong>주문 전송 모듈은 아직 없어 어떤 모드에서도 주문이 거래소로 나가지 않습니다.</strong>'
-    : m === 'live'
+  $('banner').innerHTML = m === 'live'
     ? '<strong>실거래 모드입니다.</strong> 실제 주문이 거래소로 전송됩니다.'
     : '<strong>모의 모드입니다.</strong> 주문은 설계만 되고 거래소로 나가지 않습니다. ' +
       '실거래 전환에는 <code>.env</code>의 <code>BITHUMB_LIVE=1</code>과 화면 확인이 모두 필요합니다 — ' +
@@ -148,7 +151,7 @@ async function refresh() {
   $('tiles').innerHTML = [
     ['스캔 횟수', t.scans], ['스캔 종목', t.scanned], ['실행 가능', t.executable],
     ['차단', t.blocked], ['설계된 주문', t.signalCount], ['전송된 주문', t.orderCount],
-    ['오류', t.errorCount],
+    ['오류', t.errorCount], ['열린 포지션', (s.positions || []).length],
     ['마지막 스캔', t.lastScanAt ? new Date(t.lastScanAt).toLocaleTimeString('ko-KR') : '-'],
   ].map(function (x) {
     return '<div class="tile"><div class="tile-l">' + x[0] + '</div><div class="tile-v">' + x[1] + '</div></div>';
@@ -157,12 +160,12 @@ async function refresh() {
   $('btnStart').disabled = m !== 'stopped';
   $('btnStop').disabled = m === 'stopped';
   $('btnLive').disabled = !s.orderDispatchReady || !(s.liveApproved && s.hasKeys) || m === 'live';
-  $('ctrlNote').innerHTML = !s.orderDispatchReady
-    ? '<strong>주문 전송 모듈이 아직 없습니다.</strong> 지금은 실거래로 전환해도 주문이 거래소로 나가지 않습니다 — ' +
-      '신호 포착과 주문 설계까지만 동작합니다.'
-    : (s.liveApproved
-      ? '실거래가 승인된 상태입니다. 전환 시 확인을 한 번 더 묻습니다.'
-      : '실거래 버튼은 .env에 BITHUMB_LIVE=1을 설정해야 활성화됩니다.');
+  $('ctrlNote').innerHTML = s.liveApproved
+    ? '<strong>실거래가 승인된 상태입니다.</strong> 버튼을 누르면 확인을 한 번 더 묻고, 그다음부터 ' +
+      '실제 주문이 빗썸으로 전송됩니다. 자본 ' + money(s.config.capitalKrw) + '원 · 동시 포지션 ' +
+      s.config.maxConcurrentPositions + '개.'
+    : '실거래 버튼을 켜려면 <code>.env</code>에 <code>BITHUMB_LIVE=1</code>을 추가하고 대시보드를 재시작하세요. ' +
+      '이 값은 화면에서 켤 수 없습니다 — 관문을 둘로 나눈 이유입니다.';
 
   $('topCount').textContent = '— ' + s.top.length + '개';
   $('top').innerHTML = table(s.top, [
@@ -175,6 +178,26 @@ async function refresh() {
     { label: '손익분기승률', num: true, cls: function (r) { return r.breakevenWinRate > 0.6 ? 'neg' : 'pos'; },
       get: function (r) { return (r.breakevenWinRate * 100).toFixed(1) + '%'; } },
     { label: '24h대금', num: true, get: function (r) { return (r.tradeValue24h / 1e8).toFixed(0) + '억'; } },
+  ]);
+
+  $('positions').innerHTML = table(s.positions || [], [
+    { label: '종목', get: function (r) { return '<span class="sym">' + esc(r.symbol) + '</span>'; } },
+    { label: '진입', get: function (r) { return new Date(r.entryAt).toLocaleTimeString('ko-KR'); } },
+    { label: '투입', num: true, get: function (r) { return money(r.krwAmount) + '원'; } },
+    { label: '수량', num: true, get: function (r) { return r.volume == null ? '체결 대기' : r.volume; } },
+    { label: '익절', num: true, cls: function () { return 'pos'; }, get: function (r) { return money(r.takeProfit); } },
+    { label: '손절', num: true, cls: function () { return 'neg'; }, get: function (r) { return money(r.stopLoss); } },
+  ]);
+
+  $('orders').innerHTML = table(s.orders || [], [
+    { label: '시각', get: function (r) { return new Date(r.at).toLocaleTimeString('ko-KR'); } },
+    { label: '종목', get: function (r) { return '<span class="sym">' + esc(r.symbol) + '</span>'; } },
+    { label: '구분', get: function (r) {
+        return { entry: '진입', 'take-profit': '익절', 'stop-loss': '손절' }[r.kind] || esc(r.kind); } },
+    { label: '방향', cls: function (r) { return r.side === 'bid' ? 'pos' : 'neg'; },
+      get: function (r) { return r.side === 'bid' ? '매수' : '매도'; } },
+    { label: '금액/수량', num: true, get: function (r) {
+        return r.krwAmount ? money(r.krwAmount) + '원' : String(r.volume || '-'); } },
   ]);
 
   var withCharts = s.signals.filter(function (g) { return g.chart; });
@@ -229,7 +252,8 @@ async function setMode(mode, confirmLive) {
 $('btnStart').addEventListener('click', function () { setMode('dry'); });
 $('btnStop').addEventListener('click', function () { setMode('stopped'); });
 $('btnLive').addEventListener('click', function () {
-  if (confirm('실거래로 전환합니다.\n\n실제 주문이 빗썸으로 전송되고 실제 돈이 오갑니다.\n계속하시겠습니까?')) {
+  if (confirm('실거래로 전환합니다.\n\n실제 주문이 빗썸으로 전송되고 실제 돈이 오갑니다.\n' +
+      '포착 시 시장가 매수 → 익절 지정가 등록 → 손절선 도달 시 시장가 매도가 자동 실행됩니다.\n\n계속하시겠습니까?')) {
     setMode('live', true);
   }
 });

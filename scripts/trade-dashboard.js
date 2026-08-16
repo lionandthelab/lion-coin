@@ -20,6 +20,7 @@ const { detectBreakout, scoreCandidate, rankCandidates } = require('../src/scann
 const { planBracket } = require('../src/bracket');
 const { candleChart } = require('../src/chart');
 const engine = require('../src/engine');
+const trade = require('../src/bithumb-trade');
 
 const PORT = Number(process.env.DASHBOARD_PORT || 8787);
 const CONFIG_PATH = path.join(__dirname, '..', 'harness', 'trading.json');
@@ -32,6 +33,8 @@ const HAS_KEYS = Boolean(process.env.BITHUMB_API_KEY && process.env.BITHUMB_SECR
 
 let state = engine.createEngineState();
 let scanTimer = null;
+// 열린 포지션. live에서만 채워지며, 청산될 때까지 같은 종목에 다시 진입하지 않는다.
+const positions = new Map();
 
 // ── 스캔 ────────────────────────────────────────────────────────────────────
 
@@ -114,6 +117,106 @@ async function scanOnce() {
   }
 
   state = engine.applyScan(state, { candidates, signals });
+
+  if (state.mode === 'live') {
+    await manageOpenPositions();
+    await dispatchEntries(signals);
+  }
+}
+
+// ── 실주문 (mode === 'live'에서만 호출된다) ─────────────────────────────────
+
+async function dispatchEntries(signals) {
+  if (positions.size >= config.maxConcurrentPositions) return;
+
+  // 점수가 가장 높은 신호 하나만 집행한다. 자본이 작아 분산이 오히려 최소 주문
+  // 미달을 만든다.
+  const best = signals
+    .filter((g) => !positions.has(g.symbol))
+    .sort((a, b) => b.score - a.score)[0];
+  if (!best) return;
+
+  try {
+    const acct = await trade.getAccounts();
+    const krwAmount = Math.floor(Math.min(best.notional, acct.krw * 0.99));
+    if (krwAmount < config.minNotionalKrw) {
+      state = engine.recordError(state, `${best.symbol}: 주문 금액 ${krwAmount}원 < 최소 ${config.minNotionalKrw}원`);
+      return;
+    }
+
+    // 시장가 매수 — 금액만 넣는다. 돌파 직후는 지정가가 안 붙을 수 있다.
+    const order = await trade.placeOrder(
+      trade.buildEntryOrder({ symbol: best.symbol, krwAmount, ordType: 'price' })
+    );
+
+    positions.set(best.symbol, {
+      symbol: best.symbol,
+      entryUuid: order.uuid,
+      entryAt: new Date().toISOString(),
+      takeProfit: best.takeProfit,
+      stopLoss: best.stopLoss,
+      krwAmount,
+      volume: null, // 체결 확인 후 채워진다
+      tpUuid: null,
+    });
+    state.orders.push({
+      at: new Date().toISOString(), symbol: best.symbol, side: 'bid',
+      uuid: order.uuid, krwAmount, kind: 'entry',
+    });
+    best.dispatched = true;
+  } catch (err) {
+    state = engine.recordError(state, `진입 실패 ${best.symbol}: ${err.message}`);
+  }
+}
+
+// 체결된 포지션에 익절 지정가를 걸고, 손절선을 감시한다.
+async function manageOpenPositions() {
+  for (const [symbol, pos] of positions) {
+    try {
+      // 진입 체결 수량 확인 → 익절 지정가 등록
+      if (!pos.volume) {
+        const o = await trade.getOrder(pos.entryUuid);
+        const filled = Number(o.executed_volume || 0);
+        if (filled <= 0) continue;
+        pos.volume = filled;
+
+        const tp = await trade.placeOrder(
+          trade.buildExitOrder({ symbol, price: Math.round(pos.takeProfit), volume: filled, ordType: 'limit' })
+        );
+        pos.tpUuid = tp.uuid;
+        state.orders.push({
+          at: new Date().toISOString(), symbol, side: 'ask', uuid: tp.uuid,
+          price: pos.takeProfit, volume: filled, kind: 'take-profit',
+        });
+        continue;
+      }
+
+      // 익절 체결 확인
+      if (pos.tpUuid) {
+        const tpOrder = await trade.getOrder(pos.tpUuid);
+        if (tpOrder.state === 'done') {
+          positions.delete(symbol);
+          continue;
+        }
+      }
+
+      // 손절 감시 — 지정가로 걸어둘 수 없으므로 현재가를 보고 시장가로 청산한다.
+      const book = await bithumb.fetchOrderbook(symbol);
+      if (book.bid <= pos.stopLoss) {
+        if (pos.tpUuid) await trade.cancelOrder(pos.tpUuid).catch(() => {});
+        const sl = await trade.placeOrder(
+          trade.buildExitOrder({ symbol, volume: pos.volume, ordType: 'market' })
+        );
+        state.orders.push({
+          at: new Date().toISOString(), symbol, side: 'ask', uuid: sl.uuid,
+          volume: pos.volume, kind: 'stop-loss',
+        });
+        positions.delete(symbol);
+      }
+    } catch (err) {
+      state = engine.recordError(state, `포지션 관리 ${symbol}: ${err.message}`);
+    }
+  }
 }
 
 function startLoop() {
@@ -190,9 +293,12 @@ const server = http.createServer(async (req, res) => {
       },
       liveApproved: LIVE_APPROVED,
       hasKeys: HAS_KEYS,
-      // 주문 전송 모듈은 아직 없다. 버튼이 거래하는 것처럼 보이면 안 되므로
-      // 화면이 이 값을 보고 비활성화한다.
-      orderDispatchReady: false,
+      orderDispatchReady: true,
+      positions: [...positions.values()].map((p) => ({
+        symbol: p.symbol, entryAt: p.entryAt, krwAmount: p.krwAmount,
+        volume: p.volume, takeProfit: p.takeProfit, stopLoss: p.stopLoss,
+      })),
+      orders: state.orders.slice(-20).reverse(),
       top: rankCandidates(state.candidates, 20),
       blocked: state.candidates
         .filter((c) => !c.executable && c.reason !== '돌파 조건 미충족')
@@ -229,4 +335,6 @@ server.listen(PORT, () => {
   console.log(`  모드: stopped (시작 버튼은 모의로만 진입)`);
   console.log(`  API 키: ${HAS_KEYS ? '설정됨' : '없음'} · 실거래 승인: ${LIVE_APPROVED ? '켜짐' : '꺼짐'}`);
   console.log(`  대상: 거래대금 ${(config.minTradeValue24h / 1e8).toFixed(0)}억원 이상 상위 ${config.maxSymbols}종목`);
+  console.log(`  자본 ${config.capitalKrw.toLocaleString()}원 · 위험 ${config.riskPct}% · 동시 포지션 ${config.maxConcurrentPositions}개`);
+  console.log('  ⚠ 실거래 스위치는 화면에 있습니다. 이 프로세스는 스스로 live로 전환하지 않습니다.');
 });
