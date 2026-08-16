@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>실시간 매매 대시보드</title>
+<style>
+:root {
+  color-scheme: dark;
+  --plane:#0d0d0d; --surface:#1a1a19; --ink:#fff; --ink-2:#c3c2b7; --muted:#898781;
+  --hairline:rgba(255,255,255,0.10); --grid:#2c2c2a; --accent:#3987e5;
+  --good:#0ca30c; --bad:#ff7b6b; --warning:#fab219;
+}
+* { box-sizing:border-box; }
+body { margin:0; background:var(--plane); color:var(--ink);
+  font:15px/1.6 system-ui,-apple-system,"Segoe UI",sans-serif; }
+main { max-width:1180px; margin:0 auto; padding:24px 20px 64px; }
+h1 { font-size:22px; margin:0 0 4px; }
+h2 { font-size:16px; margin:26px 0 10px; }
+.sub { color:var(--ink-2); margin:0 0 18px; font-size:13.5px; }
+.card { background:var(--surface); border:1px solid var(--hairline);
+  border-radius:10px; padding:18px; margin-bottom:14px; }
+.tiles { display:grid; grid-template-columns:repeat(auto-fit,minmax(120px,1fr)); gap:10px; margin-bottom:14px; }
+.tile { background:var(--surface); border:1px solid var(--hairline); border-radius:10px; padding:12px 14px; }
+.tile-l { color:var(--ink-2); font-size:12px; }
+.tile-v { font-size:22px; font-weight:600; margin-top:2px; }
+button { padding:10px 20px; border:none; border-radius:8px; font:inherit; font-weight:600;
+  cursor:pointer; margin-right:8px; }
+button:disabled { opacity:.4; cursor:not-allowed; }
+.start { background:var(--good); color:#fff; }
+.stop { background:#444; color:#fff; }
+.live { background:var(--bad); color:#fff; }
+table { width:100%; border-collapse:collapse; font-size:13.5px; }
+th { text-align:left; color:var(--muted); font-weight:500; font-size:12px;
+  border-bottom:1px solid var(--grid); padding:6px 8px; }
+td { border-bottom:1px solid var(--grid); padding:7px 8px; }
+tr:last-child td { border-bottom:none; }
+.sym { font-family:ui-monospace,monospace; font-weight:600; }
+.num { text-align:right; font-variant-numeric:tabular-nums; }
+.pos { color:var(--good); } .neg { color:var(--bad); }
+.badge { display:inline-block; font-size:11.5px; border-radius:999px; padding:2px 10px;
+  border:1px solid var(--hairline); color:var(--ink-2); }
+.badge.on { color:var(--good); border-color:var(--good); }
+.badge.dry { color:var(--accent); border-color:var(--accent); }
+.badge.live { color:var(--bad); border-color:var(--bad); }
+.warn { background:color-mix(in srgb,var(--warning) 16%,transparent);
+  border:1px solid var(--warning); border-radius:8px; padding:10px 12px; font-size:13px; margin:0 0 14px; }
+.notes { color:var(--muted); font-size:12.5px; }
+.empty { color:var(--muted); font-size:13px; padding:10px 0; }
+</style>
+</head>
+<body>
+<main>
+<h1>실시간 매매 대시보드 <span id="mode" class="badge">…</span></h1>
+<p class="sub">빗썸 돌파 스캐너 · 상단·하단 조건 주문 설계 —
+<span id="cfg"></span></p>
+
+<p class="warn" id="banner">불러오는 중…</p>
+
+<div class="tiles" id="tiles"></div>
+
+<div class="card">
+  <button id="btnStart" class="start">▶ 시작 (모의)</button>
+  <button id="btnStop" class="stop">■ 정지</button>
+  <button id="btnLive" class="live">⚠ 실거래 전환 (주문 전송 미구현)</button>
+  <div class="notes" style="margin-top:10px" id="ctrlNote"></div>
+</div>
+
+<h2>포착된 후보 <span class="notes" id="topCount"></span></h2>
+<div class="card"><div id="top"></div></div>
+
+<h2>설계된 주문 <span class="notes">— 모의 모드에서는 거래소로 나가지 않습니다</span></h2>
+<div class="card"><div id="signals"></div></div>
+
+<h2>차단된 종목 <span class="notes">— 신호는 있었으나 비용·유동성 기준에 걸린 것</span></h2>
+<div class="card"><div id="blocked"></div></div>
+
+<h2>오류</h2>
+<div class="card"><div id="errors"></div></div>
+</main>
+
+<script>
+var $ = function (id) { return document.getElementById(id); };
+var fmt = new Intl.NumberFormat('ko-KR');
+var money = function (v) { return fmt.format(Math.round(v)); };
+var esc = function (s) { return String(s).replace(/[&<>"']/g, function (c) {
+  return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c];
+}); };
+
+function table(rows, cols) {
+  if (!rows.length) return '<div class="empty">아직 없습니다.</div>';
+  return '<table><thead><tr>' + cols.map(function (c) {
+    return '<th class="' + (c.num ? 'num' : '') + '">' + c.label + '</th>';
+  }).join('') + '</tr></thead><tbody>' + rows.map(function (r) {
+    return '<tr>' + cols.map(function (c) {
+      return '<td class="' + (c.num ? 'num ' : '') + (c.cls ? c.cls(r) : '') + '">' + c.get(r) + '</td>';
+    }).join('') + '</tr>';
+  }).join('') + '</tbody></table>';
+}
+
+async function refresh() {
+  var s;
+  try { s = await (await fetch('/api/state')).json(); }
+  catch (e) { $('banner').textContent = '서버에 연결할 수 없습니다: ' + e.message; return; }
+
+  var m = s.summary.mode;
+  $('mode').textContent = m === 'stopped' ? '정지됨' : m === 'dry' ? '모의 실행 중' : '실거래 중';
+  $('mode').className = 'badge ' + (m === 'stopped' ? '' : m === 'dry' ? 'dry' : 'live');
+
+  $('cfg').textContent = s.config.interval + '봉 · 상위 ' + s.config.maxSymbols + '종목 · 익절 +' +
+    (s.config.takeProfitBps / 100) + '% / 손절 -' + (s.config.stopLossBps / 100) + '% · 수수료 ' +
+    s.config.feeBps + 'bps · 자본 ' + money(s.config.capitalKrw) + '원';
+
+  $('banner').innerHTML = !s.orderDispatchReady
+    ? '<strong>거래 직전 단계입니다.</strong> 시장을 순환하며 돌파를 포착하고 진입·익절·손절을 설계하는 것까지 ' +
+      '동작합니다. <strong>주문 전송 모듈은 아직 없어 어떤 모드에서도 주문이 거래소로 나가지 않습니다.</strong>'
+    : m === 'live'
+    ? '<strong>실거래 모드입니다.</strong> 실제 주문이 거래소로 전송됩니다.'
+    : '<strong>모의 모드입니다.</strong> 주문은 설계만 되고 거래소로 나가지 않습니다. ' +
+      '실거래 전환에는 <code>.env</code>의 <code>BITHUMB_LIVE=1</code>과 화면 확인이 모두 필요합니다 — ' +
+      '현재 승인: <strong>' + (s.liveApproved ? '켜짐' : '꺼짐') + '</strong> · API 키: <strong>' +
+      (s.hasKeys ? '설정됨' : '없음') + '</strong>';
+
+  var t = s.summary;
+  $('tiles').innerHTML = [
+    ['스캔 횟수', t.scans], ['스캔 종목', t.scanned], ['실행 가능', t.executable],
+    ['차단', t.blocked], ['설계된 주문', t.signalCount], ['전송된 주문', t.orderCount],
+    ['오류', t.errorCount],
+    ['마지막 스캔', t.lastScanAt ? new Date(t.lastScanAt).toLocaleTimeString('ko-KR') : '-'],
+  ].map(function (x) {
+    return '<div class="tile"><div class="tile-l">' + x[0] + '</div><div class="tile-v">' + x[1] + '</div></div>';
+  }).join('');
+
+  $('btnStart').disabled = m !== 'stopped';
+  $('btnStop').disabled = m === 'stopped';
+  $('btnLive').disabled = !s.orderDispatchReady || !(s.liveApproved && s.hasKeys) || m === 'live';
+  $('ctrlNote').innerHTML = !s.orderDispatchReady
+    ? '<strong>주문 전송 모듈이 아직 없습니다.</strong> 지금은 실거래로 전환해도 주문이 거래소로 나가지 않습니다 — ' +
+      '신호 포착과 주문 설계까지만 동작합니다.'
+    : (s.liveApproved
+      ? '실거래가 승인된 상태입니다. 전환 시 확인을 한 번 더 묻습니다.'
+      : '실거래 버튼은 .env에 BITHUMB_LIVE=1을 설정해야 활성화됩니다.');
+
+  $('topCount').textContent = '— ' + s.top.length + '개';
+  $('top').innerHTML = table(s.top, [
+    { label: '종목', get: function (r) { return '<span class="sym">' + esc(r.symbol) + '</span>'; } },
+    { label: '점수', num: true, get: function (r) { return r.score.toFixed(2); } },
+    { label: '돌파/ATR', num: true, get: function (r) { return r.breakout.breakoutAtrRatio.toFixed(2); } },
+    { label: '거래량배수', num: true, get: function (r) { return r.breakout.volumeRatio.toFixed(1) + 'x'; } },
+    { label: '스프레드', num: true, get: function (r) { return r.spreadBps.toFixed(1) + 'bps'; } },
+    { label: '왕복비용', num: true, get: function (r) { return r.costBps.toFixed(1) + 'bps'; } },
+    { label: '손익분기승률', num: true, cls: function (r) { return r.breakevenWinRate > 0.6 ? 'neg' : 'pos'; },
+      get: function (r) { return (r.breakevenWinRate * 100).toFixed(1) + '%'; } },
+    { label: '24h대금', num: true, get: function (r) { return (r.tradeValue24h / 1e8).toFixed(0) + '억'; } },
+  ]);
+
+  $('signals').innerHTML = table(s.signals, [
+    { label: '시각', get: function (r) { return new Date(r.at).toLocaleTimeString('ko-KR'); } },
+    { label: '종목', get: function (r) { return '<span class="sym">' + esc(r.symbol) + '</span>'; } },
+    { label: '진입', num: true, get: function (r) { return money(r.entry); } },
+    { label: '익절', num: true, cls: function () { return 'pos'; }, get: function (r) { return money(r.takeProfit); } },
+    { label: '손절', num: true, cls: function () { return 'neg'; }, get: function (r) { return money(r.stopLoss); } },
+    { label: '수량', num: true, get: function (r) { return r.quantity.toFixed(6); } },
+    { label: '명목', num: true, get: function (r) { return money(r.notional) + '원'; } },
+    { label: '손익분기', num: true, get: function (r) { return (r.breakevenWinRate * 100).toFixed(0) + '%'; } },
+    { label: '전송', get: function (r) { return r.dispatched ? '✅' : '모의'; } },
+  ]);
+
+  $('blocked').innerHTML = table(s.blocked, [
+    { label: '종목', get: function (r) { return '<span class="sym">' + esc(r.symbol) + '</span>'; } },
+    { label: '사유', get: function (r) { return esc(r.reason || ''); } },
+  ]);
+
+  $('errors').innerHTML = table(s.errors, [
+    { label: '시각', get: function (r) { return new Date(r.at).toLocaleTimeString('ko-KR'); } },
+    { label: '내용', get: function (r) { return esc(r.message); } },
+  ]);
+}
+
+async function setMode(mode, confirmLive) {
+  var r = await (await fetch('/api/mode', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ mode: mode, confirmLive: !!confirmLive }),
+  })).json();
+  if (!r.ok) alert('전환 실패: ' + r.reason);
+  refresh();
+}
+
+$('btnStart').addEventListener('click', function () { setMode('dry'); });
+$('btnStop').addEventListener('click', function () { setMode('stopped'); });
+$('btnLive').addEventListener('click', function () {
+  if (confirm('실거래로 전환합니다.\n\n실제 주문이 빗썸으로 전송되고 실제 돈이 오갑니다.\n계속하시겠습니까?')) {
+    setMode('live', true);
+  }
+});
+
+refresh();
+setInterval(refresh, 3000);
+</script>
+</body>
+</html>

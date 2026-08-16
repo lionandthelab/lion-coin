@@ -1,0 +1,22 @@
+{
+  "note": "실시간 매매 설정. 기본은 모의(dry) 전용이며 실거래는 .env의 BITHUMB_LIVE=1 승인과 화면 확인이 둘 다 있어야 한다. 수수료는 빗썸 최저 4bps 기준(사용자 확인, 2026-08-16).",
+  "interval": "5m",
+  "maxSymbols": 60,
+  "minTradeValue24h": 100000000,
+  "lookback": 20,
+  "volMult": 3,
+  "takeProfitBps": 200,
+  "stopLossBps": 100,
+  "feeBps": 4,
+  "capitalKrw": 1000000,
+  "riskPct": 0.5,
+  "scanIntervalSec": 60,
+  "rationale": {
+    "maxSymbols": "480개 전체가 아니라 거래대금 상위로 제한한다. 101위 밖은 스프레드 중앙 36bps라 왕복 44bps가 되고, 그 구간에서는 익절 2%여도 손익분기 승률이 48%로 올라간다.",
+    "takeProfitBps": "익절 +2% / 손절 -1%. 요청하신 '보수적인' 좁은 폭(±0.3%)은 왕복 비용 대비 손익분기 승률이 96~123%로 올라가 산술적으로 불가능하다.",
+    "riskPct": "한 번에 계좌의 0.5%까지만 잃도록 수량을 정한다. 손절 1%에서 명목은 자본의 50%가 된다.",
+    "maxSpreadBps": "첫 실전 스캔에서 스프레드 125bps 종목이 손익분기 78%로 통과했다. 100% 미만이면 통과시키는 것은 산술적 가능성만 본 것이고, 78%는 달성 불가능한 승률이다. 스프레드와 손익분기 승률에 실무 상한을 따로 뒀다."
+  },
+  "maxSpreadBps": 30,
+  "maxBreakevenWinRate": 0.6
+}
