@@ -17,7 +17,7 @@ const path = require('node:path');
 
 const bithumb = require('../src/bithumb');
 const {
-  detectBreakout, scoreCandidate, rankCandidates, dropUnclosedCandle,
+  detectBreakout, detectReversal, scoreCandidate, rankCandidates, dropUnclosedCandle,
 } = require('../src/scanner');
 const { planBracket } = require('../src/bracket');
 const { candleChart } = require('../src/chart');
@@ -44,6 +44,16 @@ let state = engine.createEngineState();
 let scanTimer = null;
 // 열린 포지션. live에서만 채워지며, 청산될 때까지 같은 종목에 다시 진입하지 않는다.
 const positions = new Map();
+// 신호 순간의 호가 폭 기록 — 실거래 판단에 남은 마지막 미지수를 채우는 표본이다.
+const spreadLog = [];
+
+// 중앙값을 쓴다. 급락 순간의 호가는 한두 건이 극단적으로 벌어져 평균을 끌고 간다.
+function medianSpread() {
+  if (spreadLog.length === 0) return null;
+  const v = spreadLog.map((x) => x.spreadBps).sort((a, b) => a - b);
+  const m = Math.floor(v.length / 2);
+  return v.length % 2 ? v[m] : (v[m - 1] + v[m]) / 2;
+}
 
 // ── 스캔 ────────────────────────────────────────────────────────────────────
 
@@ -64,15 +74,35 @@ async function scanOnce() {
       // 진행 중인 봉을 버려야 백테스트와 같은 전략이 된다.
       const candles = dropUnclosedCandle(raw, intervalToMs(config.interval));
 
-      const breakout = detectBreakout(candles, {
+      // 전략에 따라 진입 조건이 정반대가 된다. 아래 로직은 신호 종류를 모른 채
+      // 같은 모양을 받으므로 여기서만 갈린다.
+      const detect = config.strategy === 'breakout' ? detectBreakout : detectReversal;
+      const breakout = detect(candles, {
         lookback: config.lookback,
         volMult: config.volMult,
       });
 
+      const spread = bithumb.spreadBps(book);
+      // 남은 단 하나의 미지수를 여기서 채운다: **신호가 뜬 그 순간의 호가 폭.**
+      // 백테스트는 평시 스냅샷 스프레드를 썼는데, 진입 시점은 하필 거래량이 폭발한
+      // 급락 직후다. 평시보다 13bps만 넓어도 전략이 손실로 뒤집힌다
+      // (docs/reversal-validation.md §3). 소급 측정이 불가능하므로 지금부터 쌓는다.
+      // 스프레드 상한에 걸려 탈락한 신호도 기록해야 표본이 한쪽으로 치우치지 않는다.
+      if (breakout.isBreakout) {
+        spreadLog.push({
+          at: new Date().toISOString(),
+          symbol: m.symbol,
+          spreadBps: spread,
+          volumeRatio: breakout.volumeRatio,
+          rejectedForSpread: spread > config.maxSpreadBps,
+        });
+        if (spreadLog.length > 2000) spreadLog.shift();
+      }
+
       const c = scoreCandidate({
         symbol: m.symbol,
         breakout,
-        spreadBps: bithumb.spreadBps(book),
+        spreadBps: spread,
         feeBpsRoundTrip: config.feeBps * 2,
         takeProfitBps: config.takeProfitBps,
         stopLossBps: config.stopLossBps,
@@ -115,7 +145,7 @@ async function scanOnce() {
               stopLoss: plan.stopLossPrice,
               highlightLast: true,
               showVolume: true,
-              label: `${m.symbol} 돌파 포착`,
+              label: `${m.symbol} ${config.strategy === 'breakout' ? '돌파' : '반전'} 포착`,
             }),
             // dry에서는 여기까지. live 전환 시 주문 전송 모듈이 이 신호를 받는다.
             dispatched: false,
@@ -304,6 +334,11 @@ const server = http.createServer(async (req, res) => {
       // 차트가 붙은 신호는 응답이 커진다 — 최근 것만 그림을 싣고 나머지는 표로만 본다.
       signals: state.signals.slice(-30).reverse().map((g, i) => (i < 8 ? g : { ...g, chart: null })),
       errors: state.errors.slice(-10).reverse(),
+      // 신호 순간의 호가 폭 — 실거래 판단에 남은 마지막 미지수. 평시 대비 얼마나
+      // 넓어지는지가 +12.7bps의 여유를 먹느냐를 결정한다.
+      spreadSamples: spreadLog.length,
+      spreadMedianBps: medianSpread(),
+      spreadLog: spreadLog.slice(-30).reverse(),
     });
     return;
   }
