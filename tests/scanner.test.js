@@ -1,7 +1,12 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 
-const { detectBreakout, scoreCandidate, rankCandidates } = require('../src/scanner');
+const {
+  detectBreakout,
+  scoreCandidate,
+  rankCandidates,
+  dropUnclosedCandle,
+} = require('../src/scanner');
 
 const MIN = 60000;
 
@@ -195,4 +200,35 @@ test('scoreCandidate: 스프레드가 상한 이내면 통과한다', () => {
     maxSpreadBps: 30,
   });
   assert.equal(r.executable, true);
+});
+
+// 실거래에서 발견: 거래소가 돌려주는 마지막 봉은 **진행 중**이다.
+// 그 봉으로 판정하면 (1) "종가가 돌파선 위" 조건이 현재가에 불과해 매 초 뒤집히고
+// (2) 거래량이 봉의 경과 비율만큼만 쌓여 있어 배수 조건이 봉 초반엔 거의 안 걸리고
+// 후반엔 쉽게 걸린다. 무엇보다 백테스트는 완성된 봉을 쓰므로 둘이 다른 전략이 된다.
+
+test('dropUnclosedCandle: 진행 중인 마지막 봉을 버린다', () => {
+  const interval = 5 * 60000;
+  const now = 1000 * interval + 60000; // 마지막 봉 시작 후 60초
+  const c = bars(flat(30)).map((x, i) => ({ ...x, openTime: (971 + i) * interval }));
+  const out = dropUnclosedCandle(c, interval, now);
+  assert.equal(out.length, c.length - 1);
+  assert.equal(out.at(-1).openTime, c.at(-2).openTime);
+});
+
+test('dropUnclosedCandle: 마지막 봉이 이미 닫혔으면 그대로 둔다', () => {
+  const interval = 5 * 60000;
+  const c = bars(flat(5)).map((x, i) => ({ ...x, openTime: (100 + i) * interval }));
+  const now = c.at(-1).openTime + interval + 1000; // 봉이 끝난 뒤
+  assert.equal(dropUnclosedCandle(c, interval, now).length, c.length);
+});
+
+test('dropUnclosedCandle: 봉이 하나뿐이고 진행 중이면 빈 배열', () => {
+  const interval = 60000;
+  const c = [{ openTime: 0, open: 1, high: 1, low: 1, close: 1, volume: 1, closeTime: 59999 }];
+  assert.deepEqual(dropUnclosedCandle(c, interval, 30000), []);
+});
+
+test('dropUnclosedCandle: 빈 배열은 그대로', () => {
+  assert.deepEqual(dropUnclosedCandle([], 60000, 0), []);
 });
