@@ -6,7 +6,7 @@ const { FIELDS, validateConfigPatch } = require('../src/trading-config');
 const base = {
   interval: '5m', maxSymbols: 60, minTradeValue24h: 1e8, lookback: 20, volMult: 3,
   takeProfitBps: 200, stopLossBps: 100, feeBps: 4, capitalKrw: 39000, riskPct: 1,
-  scanIntervalSec: 60, maxSpreadBps: 30, maxBreakevenWinRate: 0.6,
+  scanIntervalSec: 60, maxSpreadBps: 30, maxBreakevenWinRate: 0.6, strategy: 'reversal',
   maxConcurrentPositions: 1, minNotionalKrw: 5000,
   note: '문서용', rationale: { a: 'b' },
 };
@@ -107,4 +107,25 @@ test('FIELDS: 화면이 쓸 메타(단위·범위)를 노출한다', () => {
   assert.ok(FIELDS.capitalKrw.label);
   assert.equal(typeof FIELDS.riskPct.min, 'number');
   assert.ok(FIELDS.interval.options.includes('5m'));
+});
+
+// ---- 전략 선택 ----
+//
+// 돌파와 반전은 진입 조건이 정반대다. 검증에서 돌파는 무작위보다 나빴고 반전은
+// 나았다(docs/reversal-validation.md). 어느 쪽으로 도는지 화면에서 확인·변경할 수
+// 있어야 한다 — 코드에 박아두면 지금 무엇이 돌고 있는지 알 수 없다.
+
+test('validateConfigPatch: 전략을 돌파/반전 중에 고를 수 있다', () => {
+  assert.equal(validateConfigPatch({ strategy: 'reversal' }, base).ok, true);
+  assert.equal(validateConfigPatch({ strategy: 'breakout' }, base).ok, true);
+});
+
+test('validateConfigPatch: 없는 전략 이름은 거부한다', () => {
+  const r = validateConfigPatch({ strategy: 'momentum' }, base);
+  assert.equal(r.ok, false);
+  assert.match(r.errors.join(' '), /momentum/);
+});
+
+test('FIELDS: 화면이 전략 선택지를 그릴 수 있다', () => {
+  assert.deepEqual(FIELDS.strategy.options, ['reversal', 'breakout']);
 });
