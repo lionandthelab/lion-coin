@@ -18,6 +18,7 @@ const path = require('node:path');
 const bithumb = require('../src/bithumb');
 const { detectBreakout, scoreCandidate, rankCandidates } = require('../src/scanner');
 const { planBracket } = require('../src/bracket');
+const { candleChart } = require('../src/chart');
 const engine = require('../src/engine');
 
 const PORT = Number(process.env.DASHBOARD_PORT || 8787);
@@ -90,6 +91,18 @@ async function scanOnce() {
             notional: plan.notional,
             breakevenWinRate: plan.breakevenWinRate,
             costBps: c.costBps,
+            volumeRatio: breakout.volumeRatio,
+            breakoutLevel: breakout.level,
+            // 포착된 이유를 나중에 눈으로 확인할 수 있도록 그 순간의 캔들 창을
+            // 함께 저장한다. 신호만 남기면 "왜 잡혔는지"를 되짚을 수 없다.
+            chart: candleChart(candles.slice(-60), {
+              breakoutLevel: breakout.level,
+              takeProfit: plan.takeProfitPrice,
+              stopLoss: plan.stopLossPrice,
+              highlightLast: true,
+              showVolume: true,
+              label: `${m.symbol} 돌파 포착`,
+            }),
             // dry에서는 여기까지. live 전환 시 주문 전송 모듈이 이 신호를 받는다.
             dispatched: false,
           });
@@ -184,7 +197,8 @@ const server = http.createServer(async (req, res) => {
       blocked: state.candidates
         .filter((c) => !c.executable && c.reason !== '돌파 조건 미충족')
         .slice(0, 20),
-      signals: state.signals.slice(-30).reverse(),
+      // 차트가 붙은 신호는 응답이 커진다 — 최근 것만 그림을 싣고 나머지는 표로만 본다.
+      signals: state.signals.slice(-30).reverse().map((g, i) => (i < 8 ? g : { ...g, chart: null })),
       errors: state.errors.slice(-10).reverse(),
     });
     return;
