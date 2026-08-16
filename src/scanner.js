@@ -72,6 +72,11 @@ function scoreCandidate({
   stopLossBps,
   tradeValue24h = 0,
   minTradeValue24h = 1e8, // 24시간 거래대금 1억원
+  // 산술적 가능성(<100%)과 실무적 달성 가능성은 다르다. 첫 실전 스캔에서
+  // 스프레드 125bps 종목이 손익분기 78%로 "통과"했는데, 78%는 달성 불가능한
+  // 승률이다. 현실적인 상한을 따로 둔다.
+  maxBreakevenWinRate = 0.6,
+  maxSpreadBps = 30,
 } = {}) {
   const costBps = feeBpsRoundTrip + (spreadBps || 0);
   const be = breakevenWinRate({ tpBps: takeProfitBps, slBps: stopLossBps, costBps });
@@ -79,10 +84,12 @@ function scoreCandidate({
   let reason = null;
   if (!breakout || !breakout.isBreakout) {
     reason = '돌파 조건 미충족';
-  } else if (be > 1) {
+  } else if (spreadBps > maxSpreadBps) {
+    reason = `스프레드 ${spreadBps.toFixed(0)}bps > 상한 ${maxSpreadBps}bps — 진입·청산만으로 익절폭을 먹습니다`;
+  } else if (be > maxBreakevenWinRate) {
     reason =
-      `손익분기 승률 ${(be * 100).toFixed(0)}% — 익절폭(${takeProfitBps}bps)이 ` +
-      `왕복 비용(${costBps.toFixed(0)}bps)을 감당하지 못합니다`;
+      `손익분기 승률 ${(be * 100).toFixed(0)}% > 상한 ${(maxBreakevenWinRate * 100).toFixed(0)}% — ` +
+      `익절폭(${takeProfitBps}bps)이 왕복 비용(${costBps.toFixed(0)}bps)에 비해 좁습니다`;
   } else if (tradeValue24h < minTradeValue24h) {
     reason = `24시간 거래대금 ${(tradeValue24h / 1e8).toFixed(2)}억원 < 기준 ${(minTradeValue24h / 1e8).toFixed(0)}억원`;
   }

@@ -76,6 +76,7 @@ test('scoreCandidate: 손익분기 승률이 1을 넘으면 실행 불가', () =
     takeProfitBps: 30,
     stopLossBps: 50,
     tradeValue24h: 1e9,
+    maxSpreadBps: 999, // 스프레드 관문을 열어 승률 조건만 격리한다
   });
   assert.equal(r.executable, false);
   assert.match(r.reason, /승률/);
@@ -152,4 +153,46 @@ test('rankCandidates: limit으로 상위만 자른다', () => {
 
 test('rankCandidates: 배열이 아니면 TypeError', () => {
   assert.throws(() => rankCandidates(null), TypeError);
+});
+
+// 실제 스캔에서 드러난 구멍: 스프레드 125bps 종목이 손익분기 78%로 "통과"했다.
+// 100% 미만이면 통과시키는 것은 산술적 가능성만 본 것이고, 실무적으로 78%는
+// 달성 불가능하다. 현실적인 상한을 따로 둔다.
+
+test('scoreCandidate: 손익분기 승률이 실무 상한을 넘으면 실행 불가', () => {
+  const base = {
+    symbol: 'XYZ',
+    breakout: { isBreakout: true, breakoutAtrRatio: 2, volumeRatio: 5 },
+    spreadBps: 126, feeBpsRoundTrip: 8,
+    takeProfitBps: 200, stopLossBps: 100, tradeValue24h: 1e10,
+    maxSpreadBps: 999, // 스프레드 관문을 열어 승률 조건만 격리한다
+  };
+  // 손익분기 (100+134)/300 = 78%
+  assert.equal(scoreCandidate(base).executable, false, '기본 상한(60%)에 걸려야 함');
+  assert.match(scoreCandidate(base).reason, /승률/);
+  // 상한을 풀면 통과한다 — 기본값이 막고 있다는 뜻
+  assert.equal(scoreCandidate({ ...base, maxBreakevenWinRate: 0.99 }).executable, true);
+});
+
+test('scoreCandidate: 스프레드 상한을 넘으면 실행 불가', () => {
+  const r = scoreCandidate({
+    symbol: 'XYZ',
+    breakout: { isBreakout: true, breakoutAtrRatio: 2, volumeRatio: 5 },
+    spreadBps: 60, feeBpsRoundTrip: 8,
+    takeProfitBps: 1000, stopLossBps: 100, tradeValue24h: 1e10,
+    maxSpreadBps: 30,
+  });
+  assert.equal(r.executable, false);
+  assert.match(r.reason, /스프레드/);
+});
+
+test('scoreCandidate: 스프레드가 상한 이내면 통과한다', () => {
+  const r = scoreCandidate({
+    symbol: 'XYZ',
+    breakout: { isBreakout: true, breakoutAtrRatio: 2, volumeRatio: 5 },
+    spreadBps: 10, feeBpsRoundTrip: 8,
+    takeProfitBps: 300, stopLossBps: 100, tradeValue24h: 1e10,
+    maxSpreadBps: 30,
+  });
+  assert.equal(r.executable, true);
 });
