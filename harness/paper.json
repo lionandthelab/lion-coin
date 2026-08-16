@@ -86,7 +86,7 @@
       "note": "추세 롱숏 대조군. 3라운드 확인 시험에서 기각(2/6)."
     }
   ],
-  "lastTickAt": "2026-08-15T13:15:19.647Z",
+  "lastTickAt": "2026-08-16T00:37:36.920Z",
   "series": {
     "BTCUSDT": {
       "history": [
@@ -141,6 +141,60 @@
               "totalReturnPct": -0.1105,
               "maxDrawdownPct": 0.332,
               "tradeCount": 2
+            }
+          ]
+        },
+        {
+          "candleOpenTime": 1786840200000,
+          "close": 63033,
+          "rows": [
+            {
+              "id": "buyAndHold",
+              "position": 1,
+              "equity": 1000.4149,
+              "totalReturnPct": 0.0415,
+              "maxDrawdownPct": 0.3839,
+              "tradeCount": 0
+            },
+            {
+              "id": "liquidationFade-v8",
+              "position": 0,
+              "equity": 1000,
+              "totalReturnPct": 0,
+              "maxDrawdownPct": 0,
+              "tradeCount": 0
+            },
+            {
+              "id": "liquidationFade-v20",
+              "position": 0,
+              "equity": 1000,
+              "totalReturnPct": 0,
+              "maxDrawdownPct": 0,
+              "tradeCount": 0
+            },
+            {
+              "id": "stopRunReversal",
+              "position": 0,
+              "equity": 998.0993,
+              "totalReturnPct": -0.1901,
+              "maxDrawdownPct": 0.2377,
+              "tradeCount": 9
+            },
+            {
+              "id": "volBreakout",
+              "position": 0,
+              "equity": 998.7693,
+              "totalReturnPct": -0.1231,
+              "maxDrawdownPct": 0.1231,
+              "tradeCount": 5
+            },
+            {
+              "id": "emaCrossLS",
+              "position": -1,
+              "equity": 1000.1833,
+              "totalReturnPct": 0.0183,
+              "maxDrawdownPct": 0.2699,
+              "tradeCount": 3
             }
           ]
         }
@@ -201,6 +255,60 @@
               "tradeCount": 1
             }
           ]
+        },
+        {
+          "candleOpenTime": 1786840200000,
+          "close": 1881.27,
+          "rows": [
+            {
+              "id": "buyAndHold",
+              "position": 1,
+              "equity": 999.6566,
+              "totalReturnPct": -0.0343,
+              "maxDrawdownPct": 0.5184,
+              "tradeCount": 0
+            },
+            {
+              "id": "liquidationFade-v8",
+              "position": 0,
+              "equity": 1000,
+              "totalReturnPct": 0,
+              "maxDrawdownPct": 0,
+              "tradeCount": 0
+            },
+            {
+              "id": "liquidationFade-v20",
+              "position": 0,
+              "equity": 1000,
+              "totalReturnPct": 0,
+              "maxDrawdownPct": 0,
+              "tradeCount": 0
+            },
+            {
+              "id": "stopRunReversal",
+              "position": 0,
+              "equity": 999.4924,
+              "totalReturnPct": -0.0508,
+              "maxDrawdownPct": 0.1774,
+              "tradeCount": 10
+            },
+            {
+              "id": "volBreakout",
+              "position": 0,
+              "equity": 999.8724,
+              "totalReturnPct": -0.0128,
+              "maxDrawdownPct": 0.0345,
+              "tradeCount": 2
+            },
+            {
+              "id": "emaCrossLS",
+              "position": -1,
+              "equity": 998.9315,
+              "totalReturnPct": -0.1068,
+              "maxDrawdownPct": 0.3829,
+              "tradeCount": 3
+            }
+          ]
         }
       ]
     },
@@ -257,6 +365,60 @@
               "totalReturnPct": -0.1861,
               "maxDrawdownPct": 0.5687,
               "tradeCount": 2
+            }
+          ]
+        },
+        {
+          "candleOpenTime": 1786840200000,
+          "close": 75.38,
+          "rows": [
+            {
+              "id": "buyAndHold",
+              "position": 1,
+              "equity": 1000.4727,
+              "totalReturnPct": 0.0473,
+              "maxDrawdownPct": 0.8265,
+              "tradeCount": 0
+            },
+            {
+              "id": "liquidationFade-v8",
+              "position": 0,
+              "equity": 1000,
+              "totalReturnPct": 0,
+              "maxDrawdownPct": 0,
+              "tradeCount": 0
+            },
+            {
+              "id": "liquidationFade-v20",
+              "position": 0,
+              "equity": 1000,
+              "totalReturnPct": 0,
+              "maxDrawdownPct": 0,
+              "tradeCount": 0
+            },
+            {
+              "id": "stopRunReversal",
+              "position": 0,
+              "equity": 993.094,
+              "totalReturnPct": -0.6906,
+              "maxDrawdownPct": 0.8355,
+              "tradeCount": 14
+            },
+            {
+              "id": "volBreakout",
+              "position": 0,
+              "equity": 997.8768,
+              "totalReturnPct": -0.2123,
+              "maxDrawdownPct": 0.2123,
+              "tradeCount": 3
+            },
+            {
+              "id": "emaCrossLS",
+              "position": -1,
+              "equity": 995.5749,
+              "totalReturnPct": -0.4425,
+              "maxDrawdownPct": 0.8374,
+              "tradeCount": 3
             }
           ]
         }
