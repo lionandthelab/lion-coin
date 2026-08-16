@@ -13,7 +13,7 @@ const { bundleModules } = require('../harness/lib/bundle');
 
 const ROOT = path.join(__dirname, '..');
 const OUT_DIR = path.join(ROOT, '_site');
-const MODULES = ['indicators', 'risk', 'backtest', 'strategies', 'research', 'funding', 'klines'];
+const MODULES = ['indicators', 'risk', 'backtest', 'strategies', 'research', 'funding', 'klines', 'labkit'];
 
 const universe = JSON.parse(fs.readFileSync(path.join(ROOT, 'harness', 'universe.json'), 'utf8'));
 
@@ -67,6 +67,8 @@ const TEMPLATES = [
     note: '④와 비교하세요. 추세 역행 포지션을 걸러내면 나아질 것 같지만, 실제로는 거래 수가 줄면서 성과도 나빠집니다. 필터는 잡음만 걷어내지 않습니다.',
   },
 ];
+
+const GROUPS = universe.groups;
 
 const bundle = bundleModules(
   MODULES.map((name) => ({
@@ -165,11 +167,25 @@ ${SYMBOL_GROUPS.map(
     <option value="taker">테이커 (시장가)</option><option value="maker">메이커 (지정가·미체결 위험)</option>
   </select></div>
   <div><label for="fee">수수료 (bps)</label><input id="fee" type="number" value="5" min="0" step="0.5"></div>
+  <div><label for="group">캠페인 유니버스</label><select id="group">
+${Object.keys(GROUPS).map((g) => `    <option value="${g}">${g} (${GROUPS[g].length}종)</option>`).join('\n')}
+  </select></div>
 </div>
 <div style="margin-top:12px"><label for="params">파라미터 (JSON)</label>
 <textarea id="params">{ "fast": 20, "slow": 100, "atrStopMult": 3, "dailyLossLimitPct": 5 }</textarea></div>
+<div id="customWrap" style="margin-top:12px; display:none">
+  <label for="customCode">전략 코드 (함수 본문) — <code>candles</code>, <code>params</code>, <code>helpers</code>를 받아 노출 배열을 반환</label>
+  <textarea id="customCode" style="min-height:150px"></textarea>
+  <p class="notes" style="margin:6px 0 0">
+    <code>helpers</code>: ema · sma · rsi · atr · closes · rollingPercentileRank ·
+    반환값은 캔들 수와 길이가 같고 각 원소가 -1(전량 숏) ~ 1(전량 롱)이어야 합니다.
+    <strong>코드는 이 브라우저에만 저장되며 공유 링크에 실리지 않습니다.</strong>
+  </p>
+</div>
 <button id="run">백테스트 실행</button>
 <button id="walk" class="secondary">워크포워드 검증</button>
+<button id="campaign" class="secondary">캠페인 (탐색→확인)</button>
+<button id="share" class="secondary">공유 링크 복사</button>
 <div id="status"></div>
 </section>
 
@@ -202,7 +218,36 @@ ${bundle}
       o.value = n; o.textContent = n;
       $('strategy').appendChild(o);
     });
+  var customOpt = document.createElement('option');
+  customOpt.value = '__custom__';
+  customOpt.textContent = '✎ 내 전략 (직접 작성)';
+  $('strategy').insertBefore(customOpt, $('strategy').firstChild);
   $('strategy').value = 'emaCross';
+
+  var GROUPS = ${JSON.stringify(GROUPS)};
+  var labkit = LAB.require('labkit');
+
+  var SAMPLE_CODE = [
+    '// 20봉 이동평균 위면 롱, 아래면 숏',
+    'var price = helpers.closes(candles);',
+    'var ma = helpers.sma(price, params.period || 20);',
+    'return candles.map(function (c, i) {',
+    '  if (ma[i] == null) return 0;',
+    '  return c.close > ma[i] ? 1 : -1;',
+    '});',
+  ].join(String.fromCharCode(10));
+
+  var CUSTOM_KEY = 'lab.customCode';
+  $('customCode').value = localStorage.getItem(CUSTOM_KEY) || SAMPLE_CODE;
+  $('customCode').addEventListener('input', function () {
+    localStorage.setItem(CUSTOM_KEY, this.value);
+  });
+
+  function syncCustomVisibility() {
+    $('customWrap').style.display = $('strategy').value === '__custom__' ? 'block' : 'none';
+  }
+  $('strategy').addEventListener('change', syncCustomVisibility);
+  syncCustomVisibility();
 
   var TEMPLATES = ${JSON.stringify(TEMPLATES)};
   $('template').addEventListener('change', function () {
@@ -266,10 +311,15 @@ ${bundle}
     return c;
   }
 
-  function positionsFor(candles) {
+  function strategyFn() {
     var name = $('strategy').value;
+    if (name === '__custom__') return labkit.compileUserStrategy($('customCode').value);
+    return strategies.STRATEGIES[name];
+  }
+
+  function positionsFor(candles) {
     var params = JSON.parse($('params').value || '{}');
-    return strategies.STRATEGIES[name](candles, params);
+    return strategyFn()(candles, params);
   }
 
   function metricsTable(m, extra) {
@@ -317,19 +367,19 @@ ${bundle}
     if (!folds.length) throw new Error('폴드를 만들 수 없습니다. 기간을 늘리세요.');
 
     var params = JSON.parse($('params').value || '{}');
-    var name = $('strategy').value;
+    var fn = strategyFn();
     var segments = [], isRet = [], oosRet = [];
 
     for (var k = 0; k < folds.length; k++) {
       var f = folds[k];
-      var pos = strategies.STRATEGIES[name](candles.slice(0, f.testEnd), params);
+      var pos = fn(candles.slice(0, f.testEnd), params);
       segments.push({ from: f.trainEnd, to: f.testEnd, positions: pos });
       var tr = candles.slice(f.trainFrom, f.trainEnd);
       isRet.push(backtest.summarize(backtest.runBacktest(Object.assign(
-        { candles: tr, targetPositions: strategies.STRATEGIES[name](tr, params) }, costs()))).totalReturnPct);
+        { candles: tr, targetPositions: fn(tr, params) }, costs()))).totalReturnPct);
       var te = candles.slice(f.trainEnd, f.testEnd);
       oosRet.push(backtest.summarize(backtest.runBacktest(Object.assign(
-        { candles: te, targetPositions: strategies.STRATEGIES[name](te, params) }, costs()))).totalReturnPct);
+        { candles: te, targetPositions: fn(te, params) }, costs()))).totalReturnPct);
     }
 
     var stitched = research.stitchSegments(segments);
@@ -367,24 +417,179 @@ ${bundle}
     status.textContent = '';
   }
 
+  // 한 심볼에 대한 워크포워드 게이트 판정 — 캠페인이 심볼마다 이걸 부른다.
+  async function gateFor(symbol, params, fn) {
+    var interval = $('interval').value;
+    var days = Math.max(1, Number($('days').value));
+    var end = Date.now();
+    var candles = await klines.fetchKlinesRange({
+      symbol: symbol, interval: interval, startTime: end - days * 86400000,
+      endTime: end, market: 'futures',
+    });
+    if (candles.length < 300) throw new Error(symbol + ': 봉 부족 (' + candles.length + ')');
+
+    var folds = research.buildFolds(candles.length, { foldCount: 6, firstTrainRatio: 0.4, minTestSize: 50 });
+    if (!folds.length) throw new Error(symbol + ': 폴드 생성 불가');
+
+    var segments = [], isRet = [], oosRet = [];
+    for (var k = 0; k < folds.length; k++) {
+      var f = folds[k];
+      segments.push({ from: f.trainEnd, to: f.testEnd, positions: fn(candles.slice(0, f.testEnd), params) });
+      var tr = candles.slice(f.trainFrom, f.trainEnd);
+      isRet.push(backtest.summarize(backtest.runBacktest(Object.assign(
+        { candles: tr, targetPositions: fn(tr, params) }, costs()))).totalReturnPct);
+      var te = candles.slice(f.trainEnd, f.testEnd);
+      oosRet.push(backtest.summarize(backtest.runBacktest(Object.assign(
+        { candles: te, targetPositions: fn(te, params) }, costs()))).totalReturnPct);
+    }
+    var st = research.stitchSegments(segments);
+    var seg = candles.slice(st.from, st.to);
+    var r = backtest.runBacktest(Object.assign({ candles: seg, targetPositions: st.positions }, costs()));
+    var m = research.curveMetrics(r.equity, { periodsPerYear: PPY[interval] });
+    var bh = backtest.runBacktest(Object.assign(
+      { candles: seg, targetPositions: seg.map(function () { return 1; }) }, costs()));
+    var bhM = research.curveMetrics(bh.equity, { periodsPerYear: PPY[interval] });
+    var s = backtest.summarize(r);
+    var wfe = research.walkForwardEfficiency(isRet, oosRet);
+    var gate = research.evaluateWfGate({
+      totalReturnPct: m.totalReturnPct, maxDrawdownPct: m.maxDrawdownPct,
+      bhReturnPct: bhM.totalReturnPct, tradeCount: s.tradeCount, wfe: wfe,
+    });
+    return { symbol: symbol, passes: gate.passes, ret: m.totalReturnPct, mdd: m.maxDrawdownPct, wfe: wfe };
+  }
+
+  // 캠페인 — 유니버스를 절반으로 갈라 탐색/확인으로 돌린다.
+  // 이 프로젝트에서 사전 등록 가설이 네 번 기각된 경로를 도구가 대신 잡아준다.
+  async function runCampaign() {
+    var group = $('group').value;
+    var symbols = GROUPS[group];
+    if (!symbols || symbols.length < 4) throw new Error('캠페인에는 심볼 4개 이상이 필요합니다');
+
+    var half = Math.floor(symbols.length / 2);
+    var exploration = symbols.slice(0, half);
+    var confirmation = symbols.slice(half);
+    var params = JSON.parse($('params').value || '{}');
+    var fn = strategyFn();
+
+    var expR = [], conR = [], failed = [];
+    var total = symbols.length, done = 0;
+
+    async function runSet(list, into) {
+      for (var i = 0; i < list.length; i++) {
+        status.textContent = '캠페인 ' + (++done) + '/' + total + ' — ' + list[i];
+        try { into.push(await gateFor(list[i], params, fn)); }
+        catch (e) { failed.push(e.message); }
+      }
+    }
+    await runSet(exploration, expR);
+    await runSet(confirmation, conR);
+
+    if (!expR.length || !conR.length) {
+      throw new Error('데이터를 받은 심볼이 부족합니다. ' + failed.join(' · '));
+    }
+
+    var v = labkit.campaignVerdict({ exploration: expR, confirmation: conR });
+    var row = function (r) {
+      return '<tr><td class="tid">' + r.symbol + '</td><td>' + (r.passes ? '✅' : '❌') +
+        '</td><td class="' + cls(r.ret) + '">' + pct(r.ret) + '</td><td>' + r.mdd.toFixed(1) +
+        '%</td><td class="' + (r.wfe != null && r.wfe >= 0.2 ? 'pos' : 'neg') + '">' +
+        (r.wfe == null ? 'n/a' : r.wfe.toFixed(2)) + '</td></tr>';
+    };
+
+    out.innerHTML =
+      '<h2>캠페인 결과 — ' + group + '</h2><section class="card">' +
+      '<p class="verdict ' + (v.replicated ? 'pos' : 'neg') + '">' +
+      (v.replicated ? '✅ ' : '❌ ') + v.headline + '</p>' +
+      '<p class="notes">' + v.detail + '</p>' +
+      (failed.length ? '<p class="warn">건너뛴 심볼 ' + failed.length + '개: ' +
+        failed.join(' · ').replace(/</g, '&lt;') + '</p>' : '') +
+      '<h3>탐색 그룹 (' + v.explorationPassed + '/' + v.explorationTotal + ' 통과)</h3>' +
+      '<table><thead><tr><th>심볼</th><th>게이트</th><th>수익</th><th>MDD</th><th>WFE</th></tr></thead><tbody>' +
+      expR.map(row).join('') + '</tbody></table>' +
+      '<h3>확인 그룹 (' + v.confirmationPassed + '/' + v.confirmationTotal + ' 통과)</h3>' +
+      '<table><thead><tr><th>심볼</th><th>게이트</th><th>수익</th><th>MDD</th><th>WFE</th></tr></thead><tbody>' +
+      conR.map(row).join('') + '</tbody></table>' +
+      '<p class="notes">유니버스를 앞뒤 절반으로 갈라 탐색/확인으로 씁니다. ' +
+      '탐색에서 통과한 설정이 손대지 않은 확인 그룹에서도 통과해야 의미가 있습니다.</p></section>';
+    status.textContent = '';
+  }
+
+  // 공유 링크 — 설정만 담고 전략 코드는 절대 담지 않는다.
+  function currentConfig() {
+    return {
+      symbol: $('symbol').value.trim().toUpperCase(),
+      interval: $('interval').value,
+      days: Number($('days').value),
+      strategy: $('strategy').value,
+      params: JSON.parse($('params').value || '{}'),
+      execution: $('execution').value,
+      fee: Number($('fee').value),
+      group: $('group').value,
+    };
+  }
+
+  function applyConfig(c) {
+    if (c.symbol) $('symbol').value = c.symbol;
+    if (c.interval) $('interval').value = c.interval;
+    if (c.days) $('days').value = c.days;
+    if (c.strategy) $('strategy').value = c.strategy;
+    if (c.params) $('params').value = JSON.stringify(c.params, null, 2);
+    if (c.execution) $('execution').value = c.execution;
+    if (c.fee != null) $('fee').value = c.fee;
+    if (c.group) $('group').value = c.group;
+    syncCustomVisibility();
+  }
+
+  $('share').addEventListener('click', async function () {
+    var cfg = currentConfig();
+    var url = location.origin + location.pathname + '#c=' + labkit.encodeShareConfig(cfg);
+    try { await navigator.clipboard.writeText(url); status.textContent = '공유 링크를 복사했습니다.'; }
+    catch (e) { status.textContent = '복사 실패 — 주소: ' + url; }
+    if (cfg.strategy === '__custom__') {
+      status.textContent += ' (내 전략 코드는 링크에 포함되지 않습니다 — 받는 사람은 설정만 보게 됩니다.)';
+    }
+  });
+
+  // 링크로 들어온 경우 설정을 복원한다. 코드가 실려 있어도 디코더가 걸러낸다.
+  if (location.hash.indexOf('#c=') === 0) {
+    try { applyConfig(labkit.decodeShareConfig(location.hash.slice(3))); }
+    catch (e) { status.textContent = '공유 링크 오류: ' + e.message; }
+  }
+
   function guardRun(fn) {
     return async function () {
-      $('run').disabled = $('walk').disabled = true;
+      $('run').disabled = $('walk').disabled = $('campaign').disabled = true;
       out.innerHTML = '';
       try { await fn(); }
       catch (e) { status.textContent = '오류: ' + e.message; }
-      finally { $('run').disabled = $('walk').disabled = false; }
+      finally { $('run').disabled = $('walk').disabled = $('campaign').disabled = false; }
     };
   }
 
   $('run').addEventListener('click', guardRun(runSingle));
   $('walk').addEventListener('click', guardRun(runWalkForward));
+  $('campaign').addEventListener('click', guardRun(runCampaign));
 })();
 </script>
 </body>
 </html>
 `;
 
+// 생성된 스크립트의 문법을 빌드 시점에 검사한다.
+// 템플릿 리터럴로 JS를 찍어내면 이스케이프가 빌드 때 한 번 소비되어, 문자열이
+// 조용히 끊긴 채 배포될 수 있다 — 페이지를 열기 전에는 보이지 않는 종류의 버그다.
+const blocks = html.split('<script>').slice(1).map((b) => b.split('</script>')[0]);
+blocks.forEach((code, i) => {
+  try {
+    new Function(code);
+  } catch (err) {
+    throw new Error(`생성된 script 블록 ${i + 1}에 문법 오류가 있습니다: ${err.message}`);
+  }
+});
+
 fs.mkdirSync(OUT_DIR, { recursive: true });
 fs.writeFileSync(path.join(OUT_DIR, 'lab.html'), html);
-console.log(`빌드 완료: _site/lab.html (엔진 모듈 ${MODULES.length}개 번들, ${(html.length / 1024).toFixed(0)}KB)`);
+console.log(
+  `빌드 완료: _site/lab.html (엔진 모듈 ${MODULES.length}개 번들, ` +
+    `script 블록 ${blocks.length}개 문법 검사 통과, ${(html.length / 1024).toFixed(0)}KB)`
+);
