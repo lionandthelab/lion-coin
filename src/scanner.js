@@ -72,6 +72,53 @@ function detectBreakout(candles, { lookback = 20, volMult = 3, atrPeriod = 14 } 
   };
 }
 
+// 반전 신호 — 거래량 급증을 동반한 급락 직후의 되돌림을 노린다.
+//
+// **왜 돌파의 반대인가:** 검증에서 돌파 진입은 무작위 진입보다 조직적으로 나빴다.
+// 320개 파라미터 조합 중 315개에서 기여가 음수였다. 절반쯤 음수면 잡음이지만
+// 98%가 음수인 건 방향을 가리킨다 — 30분봉에서 거래량 터진 돌파를 사는 건
+// 단기 고점을 사는 것이다.
+//
+// 그 반대를 보류해 둔 24종목에서 검증했고 재현됐다: 승률 48.9% vs 무작위 35.1%,
+// 기여 +37.0bps (t=4.30). 시간 4분할에서도 네 구간 모두 무작위를 이겼다.
+// ⚠ 단, 비용 차감 후 순기대값은 +12.7bps로 얇다 — docs/reversal-validation.md 참조.
+//
+// 판정은 돌파와 대칭이다. 세 조건을 모두 요구한다:
+//   1. 직전 N봉 저가 하향 이탈
+//   2. 거래량 급증 — 조용한 하락은 되돌릴 에너지가 없다
+//   3. 종가가 이탈선 아래에서 마감 — 아래꼬리만 달고 회복한 봉은 되돌림이 이미 끝났다
+function detectReversal(candles, { lookback = 20, volMult = 5, atrPeriod = 14 } = {}) {
+  assertPositiveInt(lookback, 'lookback');
+  assertPositiveInt(atrPeriod, 'atrPeriod');
+  if (!Array.isArray(candles)) {
+    throw new TypeError('candles는 배열이어야 합니다');
+  }
+  if (candles.length < Math.max(lookback, atrPeriod) + 1) return { ...NO_BREAKOUT };
+
+  const i = candles.length - 1;
+  const window = candles.slice(i - lookback, i);
+  const level = Math.min(...window.map((c) => c.low));
+  const avgVol = window.reduce((s, c) => s + c.volume, 0) / window.length;
+  const last = candles[i];
+
+  const a = atr(candles, atrPeriod)[i] ?? 0;
+  const volumeRatio = avgVol > 0 ? last.volume / avgVol : 0;
+
+  const brokeDown = last.low < level && last.close < level;
+
+  return {
+    // 하위 로직(scoreCandidate·엔진)이 신호 종류를 몰라도 되도록 같은 키를 쓴다.
+    isBreakout: brokeDown && volumeRatio >= volMult,
+    level,
+    volumeRatio,
+    atr: a,
+    // 깊게 이탈할수록 커지도록 부호를 뒤집는다 — 점수 계산이 양수를 전제한다.
+    breakoutAtrRatio: a > 0 ? (level - last.close) / a : 0,
+    closePrice: last.close,
+    direction: 'reversal',
+  };
+}
+
 // 후보 자격 판정. 신호가 좋아도 비용이 익절폭을 먹으면 후보가 아니다.
 function scoreCandidate({
   symbol,
@@ -133,4 +180,4 @@ function rankCandidates(list, limit = Infinity) {
     .slice(0, limit);
 }
 
-module.exports = { detectBreakout, scoreCandidate, rankCandidates, dropUnclosedCandle };
+module.exports = { detectBreakout, detectReversal, scoreCandidate, rankCandidates, dropUnclosedCandle };
