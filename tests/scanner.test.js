@@ -6,6 +6,7 @@ const {
   scoreCandidate,
   rankCandidates,
   dropUnclosedCandle,
+  detectReversal,
 } = require('../src/scanner');
 
 const MIN = 60000;
@@ -231,4 +232,56 @@ test('dropUnclosedCandle: 봉이 하나뿐이고 진행 중이면 빈 배열', (
 
 test('dropUnclosedCandle: 빈 배열은 그대로', () => {
   assert.deepEqual(dropUnclosedCandle([], 60000, 0), []);
+});
+
+// ---- 반전 신호 (detectReversal) ----
+//
+// 돌파 진입은 검증에서 무작위보다 **조직적으로 나빴다** — 320개 조합 중 315개에서
+// 기여가 음수였다. 이건 잡음이 아니라 방향을 가리킨다: 거래량 급증을 동반한 급락
+// 직후에는 되돌림이 온다. 그 반대 신호가 보류해 둔 24종목에서 재현됐다
+// (승률 48.9% vs 무작위 35.1%, t=4.30). docs/reversal-validation.md 참조.
+//
+// 구조는 돌파와 대칭이다 — scoreCandidate가 그대로 받도록 같은 모양을 돌려준다.
+
+const FLAT = Array.from({ length: 20 }, () => [101, 99, 100, 10]);
+
+test('detectReversal: 거래량 급증을 동반해 직전 N봉 저가를 깨면 신호', () => {
+  const c = bars([...FLAT, [99, 97, 97.5, 60]]);
+  const r = detectReversal(c, { lookback: 20, volMult: 5, atrPeriod: 14 });
+  assert.equal(r.isBreakout, true);
+  assert.equal(r.level, 99, '기준선은 직전 20봉의 최저 저가');
+  assert.ok(r.volumeRatio >= 5);
+});
+
+test('detectReversal: 저가만 깨고 종가가 되돌아오면 신호가 아니다', () => {
+  // 아래꼬리만 달고 회복한 봉은 되돌림이 이미 일어난 뒤다 — 먹을 게 남아 있지 않다
+  const c = bars([...FLAT, [100, 97, 99.5, 60]]);
+  assert.equal(detectReversal(c, { lookback: 20, volMult: 5 }).isBreakout, false);
+});
+
+test('detectReversal: 거래량이 안 터지면 신호가 아니다', () => {
+  const c = bars([...FLAT, [99, 97, 97.5, 12]]);
+  assert.equal(detectReversal(c, { lookback: 20, volMult: 5 }).isBreakout, false);
+});
+
+test('detectReversal: 이탈 깊이를 변동성으로 정규화해 돌려준다', () => {
+  // 종목마다 1%의 의미가 다르다. 점수 산정이 이 값을 쓴다.
+  const shallow = detectReversal(bars([...FLAT, [99, 98.5, 98.8, 60]]), { lookback: 20, volMult: 5 });
+  const deep = detectReversal(bars([...FLAT, [99, 96, 96.5, 60]]), { lookback: 20, volMult: 5 });
+  assert.ok(deep.breakoutAtrRatio > shallow.breakoutAtrRatio, '깊게 이탈할수록 커져야 한다');
+  assert.ok(deep.breakoutAtrRatio > 0);
+});
+
+test('detectReversal: 봉이 모자라면 신호를 만들어내지 않는다', () => {
+  assert.equal(detectReversal(bars(FLAT.slice(0, 5)), { lookback: 20, volMult: 5 }).isBreakout, false);
+});
+
+test('detectReversal: scoreCandidate가 그대로 받을 수 있는 모양이다', () => {
+  const s = scoreCandidate({
+    symbol: 'TEST',
+    breakout: detectReversal(bars([...FLAT, [99, 97, 97.5, 60]]), { lookback: 20, volMult: 5 }),
+    spreadBps: 10, takeProfitBps: 500, stopLossBps: 200, tradeValue24h: 1e9,
+  });
+  assert.equal(s.executable, true, s.reason);
+  assert.ok(s.score > 0);
 });
