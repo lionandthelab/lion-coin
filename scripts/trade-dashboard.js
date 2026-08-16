@@ -16,12 +16,15 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const bithumb = require('../src/bithumb');
-const { detectBreakout, scoreCandidate, rankCandidates } = require('../src/scanner');
+const {
+  detectBreakout, scoreCandidate, rankCandidates, dropUnclosedCandle,
+} = require('../src/scanner');
 const { planBracket } = require('../src/bracket');
 const { candleChart } = require('../src/chart');
 const engine = require('../src/engine');
 const trade = require('../src/bithumb-trade');
 const { FIELDS, validateConfigPatch } = require('../src/trading-config');
+const { intervalToMs } = require('../src/klines');
 
 const PORT = Number(process.env.DASHBOARD_PORT || 8787);
 const CONFIG_PATH = path.join(__dirname, '..', 'harness', 'trading.json');
@@ -54,10 +57,12 @@ async function scanOnce() {
 
   for (const m of universe) {
     try {
-      const [candles, book] = await Promise.all([
+      const [raw, book] = await Promise.all([
         bithumb.fetchCandles({ symbol: m.symbol, interval: config.interval }),
         bithumb.fetchOrderbook(m.symbol),
       ]);
+      // 진행 중인 봉을 버려야 백테스트와 같은 전략이 된다.
+      const candles = dropUnclosedCandle(raw, intervalToMs(config.interval));
 
       const breakout = detectBreakout(candles, {
         lookback: config.lookback,

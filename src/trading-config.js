@@ -29,6 +29,7 @@ const FIELDS = {
   maxBreakevenWinRate: { label: '손익분기 승률 상한', type: 'number', min: 0.01, max: 1 },
   maxConcurrentPositions: { label: '동시 포지션', type: 'int', min: 1, max: 20 },
   minNotionalKrw: { label: '최소 주문금액', type: 'number', min: 1, unit: '원' },
+  maxHoldBars: { label: '최대 보유(봉)', type: 'int', min: 1, max: 500 },
 };
 
 function validateField(key, value) {

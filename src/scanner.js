@@ -20,6 +20,16 @@ function assertPositiveInt(value, name) {
   }
 }
 
+// 거래소가 돌려주는 마지막 봉은 진행 중이다. 그 봉으로 판정하면 "종가가 돌파선
+// 위에서 마감" 조건이 현재가에 불과해 매 초 뒤집히고, 거래량은 봉의 경과 비율만큼만
+// 쌓여 있어 배수 조건이 봉 초반엔 거의 안 걸리고 후반엔 쉽게 걸린다.
+// 무엇보다 백테스트는 완성된 봉을 쓰므로, 이걸 안 버리면 실거래가 다른 전략이 된다.
+function dropUnclosedCandle(candles, intervalMs, now = Date.now()) {
+  if (!Array.isArray(candles) || candles.length === 0) return candles || [];
+  const last = candles[candles.length - 1];
+  return now < last.openTime + intervalMs ? candles.slice(0, -1) : candles;
+}
+
 const NO_BREAKOUT = {
   isBreakout: false,
   level: null,
@@ -123,4 +133,4 @@ function rankCandidates(list, limit = Infinity) {
     .slice(0, limit);
 }
 
-module.exports = { detectBreakout, scoreCandidate, rankCandidates };
+module.exports = { detectBreakout, scoreCandidate, rankCandidates, dropUnclosedCandle };
