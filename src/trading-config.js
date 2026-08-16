@@ -14,6 +14,10 @@ const { breakevenWinRate } = require('./bracket');
 
 // 화면이 그대로 폼을 그릴 수 있도록 메타를 함께 둔다.
 const FIELDS = {
+  // 돌파와 반전은 진입 조건이 정반대다. 검증에서 돌파는 무작위보다 나빴고 반전은
+  // 나았다(docs/reversal-validation.md) — 검증된 쪽을 앞에 둬 기본값으로 삼는다.
+  // 코드에 박아두면 지금 무엇이 돌고 있는지 화면에서 알 수 없다.
+  strategy: { label: '전략', type: 'enum', options: ['reversal', 'breakout'] },
   interval: { label: '캔들 간격', type: 'enum', options: INTERVALS },
   maxSymbols: { label: '스캔 종목 수', type: 'int', min: 1, max: 200 },
   minTradeValue24h: { label: '최소 24h 거래대금', type: 'number', min: 0, unit: '원' },
