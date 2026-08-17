@@ -15,6 +15,7 @@
     "dashboard": "node --env-file-if-exists=.env scripts/trade-dashboard.js"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.117.1",
     "bip32": "^4.0.0",
     "bip39": "^3.1.0",
     "bitcoinjs-lib": "^7.0.1",

@@ -19,6 +19,8 @@ const bithumb = require('../src/bithumb');
 const {
   detectBreakout, detectReversal, scoreCandidate, rankCandidates, dropUnclosedCandle,
 } = require('../src/scanner');
+const { REVIEW_EVERY, shouldReview, reviewTrades, proposeAdjustment } = require('../src/review');
+const { runAgentReview } = require('../src/review-runner');
 const { planBracket } = require('../src/bracket');
 const { candleChart } = require('../src/chart');
 const engine = require('../src/engine');
@@ -46,6 +48,11 @@ let scanTimer = null;
 const positions = new Map();
 // 신호 순간의 호가 폭 기록 — 실거래 판단에 남은 마지막 미지수를 채우는 표본이다.
 const spreadLog = [];
+// 청산된 거래. 10건마다 복기가 돈다 — 실적을 되짚으려면 청산 결과가 필요하다.
+const closedTrades = [];
+// 복기 기록. 연속 부진 횟수를 세야 한 번 나빴다고 파라미터를 흔들지 않는다.
+const reviews = [];
+let consecutiveBadReviews = 0;
 
 // 중앙값을 쓴다. 급락 순간의 호가는 한두 건이 극단적으로 벌어져 평균을 끌고 간다.
 function medianSpread() {
@@ -53,6 +60,65 @@ function medianSpread() {
   const v = spreadLog.map((x) => x.spreadBps).sort((a, b) => a - b);
   const m = Math.floor(v.length / 2);
   return v.length % 2 ? v[m] : (v[m - 1] + v[m]) / 2;
+}
+
+// ── 복기 ────────────────────────────────────────────────────────────────────
+
+function recordClose(symbol, pos, outcome, returnBps) {
+  closedTrades.push({ at: new Date().toISOString(), symbol, outcome, returnBps });
+  if (shouldReview(closedTrades.length)) runReview().catch((err) => {
+    // 복기 실패가 매매를 멈추면 안 된다 — 복기가 안 되는 것과 전략이 무너진 것은 다르다.
+    state = engine.recordError(state, `복기 실패: ${err.message}`);
+  });
+}
+
+async function runReview() {
+  const r = reviewTrades(closedTrades, {
+    window: REVIEW_EVERY,
+    takeProfitBps: config.takeProfitBps,
+    stopLossBps: config.stopLossBps,
+    costBps: config.feeBps * 2 + config.maxSpreadBps,
+  });
+  if (r.belowBreakeven) consecutiveBadReviews += 1;
+  else consecutiveBadReviews = 0;
+
+  // 규칙 기반 판정이 먼저다. 중단 판단은 모델을 기다리지 않는다.
+  const rule = proposeAdjustment(r, { consecutiveBadReviews });
+
+  // 그 다음 에이전트. 규칙이 미리 정한 질문에만 답하는 반면 이쪽은 코드 구조까지 본다.
+  const agent = await runAgentReview({
+    review: r,
+    config: publicConfig(),
+    trades: closedTrades.slice(-REVIEW_EVERY),
+    history:
+      '이 프로젝트는 68~114일 표본에서 유의해 보이던 신호 우위가 455일 4037거래 재검증에서 ' +
+      '사라진 이력이 있다 (순기대값 -22bps, 시각 대응 대조군 대비 기여 +5.2±3.1bps로 유의하지 않음). ' +
+      '짧은 표본의 우위를 믿지 말 것. 상세: docs/reversal-validation.md',
+  });
+
+  const entry = { at: new Date().toISOString(), n: closedTrades.length, review: r, rule, agent };
+  reviews.push(entry);
+  if (reviews.length > 50) reviews.shift();
+
+  // 중단은 어느 쪽이든 하나만 요구해도 멈춘다. 멈추는 방향은 되돌릴 수 있다.
+  if (rule.action === 'halt' || (agent.ok && agent.halt)) {
+    state = engine.transition(state, 'stopped');
+    stopLoop();
+    return;
+  }
+
+  // 파라미터 조정은 게이트를 통과한 것만. 규칙과 에이전트가 모두 제안하면 규칙을 따른다 —
+  // 규칙은 결정론적이라 나중에 왜 그렇게 됐는지 재현할 수 있다.
+  const patch = rule.action === 'adjust' ? rule.patch : agent.ok ? agent.autoApplied : null;
+  if (patch) {
+    const v = validateConfigPatch(patch, config);
+    if (v.ok) {
+      config = v.config;
+      entry.applied = patch;
+    } else {
+      entry.applyErrors = v.errors;
+    }
+  }
 }
 
 // ── 스캔 ────────────────────────────────────────────────────────────────────
@@ -236,6 +302,7 @@ async function manageOpenPositions() {
       if (pos.tpUuid) {
         const tpOrder = await trade.getOrder(pos.tpUuid);
         if (tpOrder.state === 'done') {
+          recordClose(symbol, pos, 'tp', config.takeProfitBps - pos.costBps);
           positions.delete(symbol);
           continue;
         }
@@ -252,6 +319,7 @@ async function manageOpenPositions() {
           at: new Date().toISOString(), symbol, side: 'ask', uuid: sl.uuid,
           volume: pos.volume, kind: 'stop-loss',
         });
+        recordClose(symbol, pos, 'sl', -config.stopLossBps - pos.costBps);
         positions.delete(symbol);
       }
     } catch (err) {
@@ -339,6 +407,12 @@ const server = http.createServer(async (req, res) => {
       spreadSamples: spreadLog.length,
       spreadMedianBps: medianSpread(),
       spreadLog: spreadLog.slice(-30).reverse(),
+      // 복기 섹션 — 10거래마다 무엇을 보고 무엇을 했는지.
+      reviewEvery: REVIEW_EVERY,
+      closedCount: closedTrades.length,
+      untilReview: REVIEW_EVERY - (closedTrades.length % REVIEW_EVERY),
+      consecutiveBadReviews,
+      reviews: reviews.slice(-10).reverse(),
     });
     return;
   }

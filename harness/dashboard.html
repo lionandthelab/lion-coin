@@ -104,6 +104,9 @@ svg.chart .volavg { stroke:var(--accent); stroke-width:1; stroke-dasharray:3 3; 
   <div class="notes" id="cfgNote" style="margin-top:10px"></div>
 </div>
 
+<h2>10거래 복기 <span class="notes" id="revCount"></span></h2>
+<div class="card"><div id="reviews"></div></div>
+
 <h2>열린 포지션</h2>
 <div class="card"><div id="positions"></div></div>
 
@@ -196,6 +199,7 @@ async function refresh() {
   ]);
 
   renderConfig(s);
+  renderReviews(s);
 
   $('positions').innerHTML = table(s.positions || [], [
     { label: '종목', get: function (r) { return '<span class="sym">' + esc(r.symbol) + '</span>'; } },
@@ -259,6 +263,58 @@ async function refresh() {
 
 var cfgDirty = false;
 var cfgFields = null;
+
+function renderReviews(s) {
+  document.getElementById('revCount').textContent =
+    '— 청산 ' + s.closedCount + '건 · 다음 복기까지 ' + s.untilReview + '건'
+    + (s.consecutiveBadReviews ? ' · 연속 부진 ' + s.consecutiveBadReviews + '회' : '');
+
+  var el = document.getElementById('reviews');
+  if (!s.reviews || !s.reviews.length) {
+    el.innerHTML = '<div class="notes">아직 복기가 없습니다. 청산 '
+      + s.reviewEvery + '건마다 실적을 되짚고 전략을 조정합니다.<br>'
+      + '규칙 기반 판정이 먼저 돌고, 이어서 클로드 전문가 에이전트가 코드 구조까지 검토합니다.<br>'
+      + '<b>파라미터 조정은 검증을 통과하면 자동 적용되지만, 코드 변경은 proposals/ 에 제안으로만 남습니다.</b></div>';
+    return;
+  }
+
+  var html = '';
+  for (var i = 0; i < s.reviews.length; i++) {
+    var r = s.reviews[i], v = r.review, a = r.agent || {};
+    var win = v.winRate == null ? '-' : (v.winRate * 100).toFixed(0) + '%';
+    var be = v.breakevenWinRate == null ? '-' : (v.breakevenWinRate * 100).toFixed(0) + '%';
+    html += '<div style="border-left:3px solid ' + (v.belowBreakeven ? '#c0392b' : '#27ae60')
+      + ';padding-left:12px;margin-bottom:18px">';
+    html += '<div><b>' + r.n + '거래 시점</b> <span class="notes">' + r.at.slice(0, 19).replace('T', ' ') + '</span></div>';
+    html += '<div>승률 ' + win + ' / 손익분기 ' + be
+      + ' · 기대값 ' + (v.expectancyBps == null ? '-' : v.expectancyBps.toFixed(1) + 'bps')
+      + ' · 최대 연속 손실 ' + v.maxLossStreak + '회</div>';
+    html += '<div style="margin-top:6px">규칙: <b>' + r.rule.action + '</b> — ' + esc(r.rule.reason) + '</div>';
+
+    if (a.ok) {
+      html += '<div style="margin-top:6px">에이전트: <b>' + a.action + '</b>'
+        + ' <span class="notes">(확신 ' + (a.confidence * 100).toFixed(0) + '%)</span><br>'
+        + esc(a.reasoning) + '</div>';
+      if (a.proposalFiles && a.proposalFiles.length) {
+        html += '<div style="margin-top:6px;color:#8e44ad">📄 코드 제안 ' + a.proposalFiles.length
+          + '건 — 자동 적용하지 않았습니다. ' + esc(a.needsHumanReview || '') + '<br>'
+          + a.proposalFiles.map(function (f) { return '<code>' + esc(f) + '</code>'; }).join('<br>') + '</div>';
+      }
+      if (a.blocked && a.blocked.length) {
+        html += '<div style="margin-top:6px;color:#c0392b">차단된 제안: ' + esc(a.blocked.join(' / ')) + '</div>';
+      }
+    } else {
+      html += '<div style="margin-top:6px" class="notes">에이전트: ' + esc(a.reason || '실행 안 됨') + '</div>';
+    }
+
+    if (r.applied) {
+      html += '<div style="margin-top:6px;color:#27ae60">✔ 적용됨: <code>'
+        + esc(JSON.stringify(r.applied)) + '</code></div>';
+    }
+    html += '</div>';
+  }
+  el.innerHTML = html;
+}
 
 function renderConfig(s) {
   cfgFields = s.fields;
