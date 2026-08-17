@@ -21,6 +21,8 @@ const {
 } = require('../src/scanner');
 const { REVIEW_EVERY, shouldReview, reviewTrades, proposeAdjustment } = require('../src/review');
 const { runAgentReview } = require('../src/review-runner');
+const { marketReturn, isIdiosyncraticDrop } = require('../src/idiosyncratic');
+const { openPending, checkFill, summarizeFills } = require('../src/maker-fill');
 const { planBracket } = require('../src/bracket');
 const { candleChart } = require('../src/chart');
 const engine = require('../src/engine');
@@ -48,6 +50,9 @@ let scanTimer = null;
 const positions = new Map();
 // 신호 순간의 호가 폭 기록 — 실거래 판단에 남은 마지막 미지수를 채우는 표본이다.
 const spreadLog = [];
+// 지정가 체결 추적 — 이 전략의 남은 최대 미지수를 실주문 없이 잰다.
+const makerPending = [];
+let mktRetLast = null;
 // 청산된 거래. 10건마다 복기가 돈다 — 실적을 되짚으려면 청산 결과가 필요하다.
 const closedTrades = [];
 // 복기 기록. 연속 부진 횟수를 세야 한 번 나빴다고 파라미터를 흔들지 않는다.
@@ -131,12 +136,45 @@ async function scanOnce() {
   const candidates = [];
   const signals = [];
 
+  // 1패스: 캔들·호가를 모아 **그 봉의 시장 수익률**을 먼저 구한다.
+  // 고유 하락 판정에 시장이 필요한데, 종목을 하나씩 보면서는 알 수 없다.
+  const fetched = [];
   for (const m of universe) {
     try {
       const [raw, book] = await Promise.all([
         bithumb.fetchCandles({ symbol: m.symbol, interval: config.interval }),
         bithumb.fetchOrderbook(m.symbol),
       ]);
+      fetched.push({ m, raw, book });
+    } catch (err) {
+      state = engine.recordError(state, `${m.symbol}: ${err.message}`);
+    }
+  }
+
+  const closedFor = (raw) => dropUnclosedCandle(raw, intervalToMs(config.interval));
+  const mktBars = [];
+  for (const f of fetched) {
+    const c = closedFor(f.raw);
+    if (c.length >= 2) mktBars.push({ prevClose: c[c.length - 2].close, close: c[c.length - 1].close });
+  }
+  const mktRet = marketReturn(mktBars, { minSymbols: 15 });
+  mktRetLast = mktRet;
+
+  // 대기 중인 지정가의 체결 여부를 갱신한다 (실주문 없이 캔들로 판정).
+  for (const f of fetched) {
+    const c = closedFor(f.raw);
+    if (!c.length) continue;
+    for (let k = 0; k < makerPending.length; k += 1) {
+      const p = makerPending[k];
+      if (p.symbol !== f.m.symbol || p.filled || p.expired) continue;
+      if (c[c.length - 1].openTime <= p.signalBarTime) continue; // 같은 봉은 세지 않는다
+      makerPending[k] = { ...checkFill(p, c[c.length - 1]), signalBarTime: c[c.length - 1].openTime };
+    }
+  }
+
+  // 2패스: 신호 판정
+  for (const { m, raw, book } of fetched) {
+    try {
       // 진행 중인 봉을 버려야 백테스트와 같은 전략이 된다.
       const candles = dropUnclosedCandle(raw, intervalToMs(config.interval));
 
@@ -154,7 +192,30 @@ async function scanOnce() {
       // 급락 직후다. 평시보다 13bps만 넓어도 전략이 손실로 뒤집힌다
       // (docs/reversal-validation.md §3). 소급 측정이 불가능하므로 지금부터 쌓는다.
       // 스프레드 상한에 걸려 탈락한 신호도 기록해야 표본이 한쪽으로 치우치지 않는다.
+      // ── 고유 하락 층 ──
+      // 이 층 하나가 우위를 +6.5bps에서 +14.5bps로 바꾼다 (docs/venue-and-data.md §9).
+      // 시장과 같이 빠진 것은 정보라 되돌아오지 않는다 — 여기서 걸러낸다.
+      const own = candles.length >= 2
+        ? (candles[candles.length - 1].close / candles[candles.length - 2].close - 1) * 10000
+        : null;
+      const idio = own != null && isIdiosyncraticDrop({
+        ownReturnBps: own, marketReturnBps: mktRet, threshold: config.excessDropBps,
+      });
+      if (breakout.isBreakout && !idio) {
+        breakout.isBreakout = false;
+        breakout.rejectedBy = '시장과 같이 하락 — 고유 하락이 아님';
+      }
+
       if (breakout.isBreakout) {
+        // 신호 순간 매수호가에 걸었다면 체결됐을지 추적한다.
+        try {
+          makerPending.push({
+            ...openPending({ symbol: m.symbol, at: Date.now(), bid: book.bid, ask: book.ask, expireBars: 4 }),
+            signalBarTime: candles[candles.length - 1].openTime,
+          });
+          if (makerPending.length > 500) makerPending.shift();
+        } catch { /* 호가가 뒤집힌 순간은 표본에서 뺀다 */ }
+
         spreadLog.push({
           at: new Date().toISOString(),
           symbol: m.symbol,
@@ -413,6 +474,10 @@ const server = http.createServer(async (req, res) => {
       untilReview: REVIEW_EVERY - (closedTrades.length % REVIEW_EVERY),
       consecutiveBadReviews,
       reviews: reviews.slice(-10).reverse(),
+      // 고유 하락 층 + 지정가 체결 실측
+      marketReturnBps: mktRetLast,
+      makerFill: summarizeFills(makerPending),
+      makerPendingOpen: makerPending.filter((p) => !p.filled && !p.expired).length,
     });
     return;
   }

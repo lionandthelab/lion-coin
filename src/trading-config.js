@@ -18,6 +18,9 @@ const FIELDS = {
   // 나았다(docs/reversal-validation.md) — 검증된 쪽을 앞에 둬 기본값으로 삼는다.
   // 코드에 박아두면 지금 무엇이 돌고 있는지 화면에서 알 수 없다.
   strategy: { label: '전략', type: 'enum', options: ['reversal', 'breakout'] },
+  // 시장 대비 초과하락 임계값. 음수여야 한다 — 하락 조건이다.
+  // 이 층이 우위를 +6.5bps에서 +14.5bps로 바꾼다 (docs/venue-and-data.md §9).
+  excessDropBps: { label: '고유하락 임계', type: 'number', min: -2000, max: -1, unit: 'bps' },
   interval: { label: '캔들 간격', type: 'enum', options: INTERVALS },
   maxSymbols: { label: '스캔 종목 수', type: 'int', min: 1, max: 200 },
   minTradeValue24h: { label: '최소 24h 거래대금', type: 'number', min: 0, unit: '원' },

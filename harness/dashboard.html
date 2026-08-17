@@ -104,6 +104,9 @@ svg.chart .volavg { stroke:var(--accent); stroke-width:1; stroke-dasharray:3 3; 
   <div class="notes" id="cfgNote" style="margin-top:10px"></div>
 </div>
 
+<h2>지정가 체결 실측 <span class="notes">— 이 전략의 남은 최대 미지수</span></h2>
+<div class="card"><div id="makerFill"></div></div>
+
 <h2>10거래 복기 <span class="notes" id="revCount"></span></h2>
 <div class="card"><div id="reviews"></div></div>
 
@@ -200,6 +203,7 @@ async function refresh() {
 
   renderConfig(s);
   renderReviews(s);
+  renderMakerFill(s);
 
   $('positions').innerHTML = table(s.positions || [], [
     { label: '종목', get: function (r) { return '<span class="sym">' + esc(r.symbol) + '</span>'; } },
@@ -263,6 +267,37 @@ async function refresh() {
 
 var cfgDirty = false;
 var cfgFields = null;
+
+function renderMakerFill(s) {
+  var f = s.makerFill || {}, el = document.getElementById('makerFill');
+  var mr = s.marketReturnBps == null ? '—' : s.marketReturnBps.toFixed(1) + 'bps';
+  var head = '<div class="notes">현재 시장 수익률(직전 봉 전 종목 평균): <b>' + mr + '</b>'
+    + ' · 고유하락 임계 ' + (s.config ? s.config.excessDropBps : '?') + 'bps</div>';
+
+  if (!f.total) {
+    el.innerHTML = head + '<div class="notes" style="margin-top:10px">판정된 표본이 아직 없습니다'
+      + (s.makerPendingOpen ? ' (대기 중 ' + s.makerPendingOpen + '건)' : '')
+      + '.<br>신호가 뜰 때 매수호가를 기록해 두고, 이후 봉의 저가가 그 값에 닿았는지로 '
+      + '지정가 체결 여부를 판정합니다. 실주문 없이 공개 캔들만으로 잽니다.<br><br>'
+      + '<b>왜 재는가:</b> 순기대값 +11.7bps는 왕복 8bps(지정가 양방향) 전제입니다. '
+      + '메이커 체결에 실패해 시장가로 밀리면 15bps가 되어 +4.7bps로 줄어듭니다. '
+      + '진입이 하필 급락 직후라 호가가 가장 벌어진 순간이므로 실측이 필요합니다.</div>';
+    return;
+  }
+  var rate = (f.fillRate * 100).toFixed(0);
+  var cost = f.fillRate * 8 + (1 - f.fillRate) * 15;   // 체결되면 8bps, 밀리면 시장가 15bps
+  var net = 11.7 + 8 - cost;                            // 총우위 19.7bps에서 실효비용 차감
+  el.innerHTML = head
+    + '<div style="margin-top:10px;font-size:1.1em">체결률 <b>' + rate + '%</b>'
+    + ' <span class="notes">(' + f.filled + '/' + f.total + '건, 대기 중 ' + (s.makerPendingOpen || 0) + ')</span></div>'
+    + '<div>평균 대기: ' + (f.avgBarsToFill == null ? '—' : f.avgBarsToFill.toFixed(1) + '봉') + '</div>'
+    + '<div style="margin-top:10px">실효 왕복 비용 <b>' + cost.toFixed(1) + 'bps</b>'
+    + ' <span class="notes">(체결 8bps / 미체결시 시장가 15bps 가정)</span></div>'
+    + '<div style="font-size:1.1em;color:' + (net > 0 ? '#27ae60' : '#c0392b') + '">'
+    + '→ 예상 순기대값 <b>' + (net > 0 ? '+' : '') + net.toFixed(1) + 'bps</b>/거래</div>'
+    + (f.total < 30 ? '<div class="notes" style="margin-top:8px">⚠ 표본 ' + f.total
+       + '건은 체결률을 추정하기에 적습니다. 30건 이상 쌓인 뒤 판단하세요.</div>' : '');
+}
 
 function renderReviews(s) {
   document.getElementById('revCount').textContent =
