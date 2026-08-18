@@ -439,12 +439,12 @@
       "id": "C6",
       "track": "C",
       "title": "연재 2편 초안 (영문): 백테스트 엔진 제작기 + 정직성 규약",
-      "status": "pending",
+      "status": "done",
       "requires_human": false,
       "depends_on": [
         "D4"
       ],
-      "notes": "랩 산출물을 그대로 홍보 콘텐츠로. 게시는 C3(계정) 이후 사람이 진행."
+      "notes": "랩 산출물을 그대로 홍보 콘텐츠로. 게시는 C3(계정) 이후 사람이 진행. 2026-08-18 완료(회차 20): drafts/02-a-backtest-engine-that-refuses-to-lie-to-you.md 작성. src/backtest.js의 룩어헤드 차단·메이커 미체결 모델링과, docs/research-campaign.md·docs/walkforward-evaluation.md의 사전등록/재현시험/이어붙인곡선 방법론을 근거로 삼았다. 수치(테스트 585개 통과, 캠페인 라운드별 게이트 통과율, 폴드평균 vs 이어붙인곡선 표)는 모두 기존 문서·npm test 결과에서 그대로 인용했다 — 게이트 미통과라는 결론을 그대로 담았고 과장하지 않았다. 빗썸 반전 전략 트랙은 별개 게이트라 이 글에서 다루지 않았다(E3 notes와 동일한 이유)."
     },
     {
       "id": "F1",
