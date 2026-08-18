@@ -97,6 +97,25 @@ function validateConfigPatch(patch, current) {
     }
   }
 
+  // 실제로 있었던 사고: planBracket의 수량은 "위험금액 ÷ 손절폭"으로 정해진다.
+  // 손절폭을 넓히면서 위험 비중을 그대로 두면 계산된 명목이 조용히 최소 주문금액
+  // 아래로 떨어진다. 개별 값은 전부 유효 범위 안이라 위의 검증을 그대로 통과하면서
+  // 신호는 계속 뜨는데 단 한 건도 체결되지 않는 상태가 된다 — 가장 조용한 실패다.
+  if (errors.length === 0) {
+    const riskAmount = next.capitalKrw * (next.riskPct / 100);
+    // 자본 한도(레버리지 없음)에 걸리면 실제 명목은 이 값이 아니라 capitalKrw로
+    // 잘리므로, 명목이 더 커지는 쪽으로만 작동한다 — 이 계산은 안전한(더 작은) 쪽만 본다.
+    const impliedNotional = riskAmount / (next.stopLossBps / 10000);
+    const notional = Math.min(impliedNotional, next.capitalKrw);
+    if (notional < next.minNotionalKrw) {
+      errors.push(
+        `위험 비중 ${next.riskPct}%와 손절 ${next.stopLossBps}bps 조합에서 계산되는 주문 명목이 ` +
+          `${Math.round(notional).toLocaleString()}원으로 최소 주문금액 ${next.minNotionalKrw.toLocaleString()}원에 ` +
+          `못 미칩니다 — 신호는 뜨지만 단 한 건도 체결되지 않습니다. 위험 비중을 올리거나 손절폭을 좁히세요.`
+      );
+    }
+  }
+
   return errors.length ? { ok: false, config: current, errors } : { ok: true, config: next, errors: [] };
 }
 
