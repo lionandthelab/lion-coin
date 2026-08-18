@@ -35,6 +35,19 @@ const CONFIG_PATH = path.join(__dirname, '..', 'harness', 'trading.json');
 
 let config = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
 
+// 설정 파일도 화면에서 오는 변경과 똑같이 검증한다. 실제로 있었던 사고: 손절폭을
+// 넓히면서 위험 비중을 그대로 둬 계산된 주문 명목이 최소 주문금액 아래로 떨어졌다.
+// 파일 로딩은 API 경로를 거치지 않아 이 검증을 건너뛰었고, 신호는 계속 뜨는데 단
+// 한 건도 체결되지 않는 상태로 몇 시간을 그대로 돌았다. 시작 시점에 막아야 한다.
+{
+  const check = validateConfigPatch({}, config);
+  if (!check.ok) {
+    console.error('harness/trading.json 검증 실패 — 시작하지 않습니다:');
+    for (const e of check.errors) console.error(`  - ${e}`);
+    process.exit(1);
+  }
+}
+
 // 화면에 내보낼 설정만 추린다 — note·rationale은 문서용이라 편집 대상이 아니다.
 function publicConfig() {
   return Object.fromEntries(Object.keys(FIELDS).map((k) => [k, config[k]]));
