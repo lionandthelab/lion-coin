@@ -103,6 +103,31 @@ test('validateConfigPatch: 여러 오류를 한꺼번에 돌려준다', () => {
   assert.ok(r.errors.length >= 3, `오류 ${r.errors.length}건`);
 });
 
+// 실제로 있었던 사고: 손절폭을 200→1000bps로 넓히면서 위험 비중은 그대로 두었다.
+// planBracket의 수량 계산은 "위험금액 ÷ 손절폭"이라 손절이 넓어지면 명목이 작아지고,
+// 어느 순간 최소 주문금액 밑으로 떨어진다. 이 조합은 신호가 계속 뜨는데도 실제로는
+// 단 한 건도 체결되지 않는다 — 개별 값은 전부 유효 범위 안이라 이전 검증들을 그대로
+// 통과하면서 조용히 매매를 멈춰 세운다.
+test('validateConfigPatch: 위험 비중이 손절폭에 비해 너무 작으면 거부한다', () => {
+  // 위험금액 390원 ÷ 손절 10% = 명목 3,900원 < 최소 5,000원
+  const r = validateConfigPatch({ riskPct: 1, stopLossBps: 1000 }, base);
+  assert.equal(r.ok, false);
+  assert.match(r.errors.join(' '), /최소 주문금액|명목/);
+});
+
+test('validateConfigPatch: 위험 비중을 충분히 올리면 같은 손절폭도 통과한다', () => {
+  // 위험금액 780원 ÷ 손절 10% = 명목 7,800원 > 최소 5,000원
+  const r = validateConfigPatch({ riskPct: 2, stopLossBps: 1000 }, base);
+  assert.equal(r.ok, true);
+});
+
+test('validateConfigPatch: 자본 한도에 걸려도(레버리지 없음) 통과 여부는 명목 기준으로 판단한다', () => {
+  // 위험 기준 명목이 자본을 넘으면 자본으로 잘리는데(planBracket의 cappedByCapital),
+  // 그 잘린 명목이 최소 주문금액을 넘으면 유효한 설정이다.
+  const r = validateConfigPatch({ capitalKrw: 39000, riskPct: 50, stopLossBps: 100 }, base);
+  assert.equal(r.ok, true);
+});
+
 test('FIELDS: 화면이 쓸 메타(단위·범위)를 노출한다', () => {
   assert.ok(FIELDS.capitalKrw.label);
   assert.equal(typeof FIELDS.riskPct.min, 'number');
