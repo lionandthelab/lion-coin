@@ -54,7 +54,7 @@
   3. stacker.news 접속 → 로그인에서 Nostr 옵션 선택 → Alby가 뜨면 승인.
   4. 나중에 B1(Coinos) 완료 후 Settings → "Link Lightning"에서 라이트닝 지갑을 계정에 연결하면 zap 수령이 가능해집니다.
   - (이메일 로그인도 지원되는 것으로 보이나 세부 절차는 미확인 — Nostr 경로가 더 확실합니다.)
-- **참고:** 연재 1편 영문 초안이 이미 준비돼 있습니다 — `drafts/01-building-a-bitcoin-wallet-from-scratch.md`. 계정 개설 후 검토·게시만 하면 됩니다. 회차 5에서 `docs/benchmark.md`(벤치마킹 리포트)도 준비됐으니, 게시 후 판매 신호(zap 유도)를 참고하세요.
+- **참고:** 연재 초안 2편이 이미 준비돼 있습니다 — `drafts/01-building-a-bitcoin-wallet-from-scratch.md`, `drafts/02-a-backtest-engine-that-refuses-to-lie-to-you.md`(회차 20 작성). 계정 개설 후 검토·게시만 하면 됩니다. 회차 5에서 `docs/benchmark.md`(벤치마킹 리포트)도 준비됐으니, 게시 후 판매 신호(zap 유도)를 참고하세요.
 - **주의:** 게시물에 zap을 받으려면 결국 라이트닝 지갑 연결(B1)이 필요합니다 — Nostr 로그인은 계정 개설·활동(게시·댓글)만 먼저 시작하게 해줄 뿐, C5의 최종 목표(수령)를 대체하지 않습니다.
 
 ## A3 — 테스트넷 faucet 코인 수령 (지금 가능)
