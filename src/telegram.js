@@ -40,14 +40,26 @@ const PARSE_MODES = ['MarkdownV2', 'HTML'];
 
 // 알림 종류를 첫 글자로 구분하기 위한 표식. 재료 알림은 급에 따라 달라지지만
 // 진입·청산·중단 표식과는 절대 겹치지 않는다 — 겹치면 첫 글자로 종류를 못 가른다.
+//
+// 재료 표식은 **방향까지** 갈라 놓는다. 등급만 보고 표식을 고르면 "S급 원화상장"과
+// "S급 거래유의"가 똑같이 🔥로 뜬다. 잠금화면에서 호재와 악재가 구별되지 않으면
+// 사람이 정확히 반대로 행동한다 — 이 시스템에서 제일 비싼 오독이다.
+// 방향을 모를 때는 호재 쪽으로 기울지 않고 "모른다"고 적는다(❔).
 const MARKERS = Object.freeze({
-  event: Object.freeze({ S: '🔥', A: '⚡', B: '📌', C: '💤', unknown: '📌' }),
+  event: Object.freeze({
+    bullish: Object.freeze({ S: '🔥', A: '⚡', B: '📌', C: '💤', unknown: '📌' }),
+    bearish: Object.freeze({ S: '🚨', A: '⚠️', B: '🔻', C: '🔽', unknown: '🔻' }),
+    neutral: Object.freeze({ S: '❔', A: '❔', B: '❔', C: '❔', unknown: '❔' }),
+  }),
   entry: '💰',
   win: '✅',
   loss: '❌',
   flat: '➖',
   halt: '🛑',
 });
+
+// 이모지가 죽는 경로(일부 잠금화면 요약·이메일 게이트웨이)에서도 방향은 남아야 한다.
+const DIRECTION_ARROWS = Object.freeze({ bullish: '▲', bearish: '▼', neutral: '' });
 
 const OUTCOME_LABELS = Object.freeze({
   take_profit: '익절 도달',
@@ -145,12 +157,40 @@ function formatKstTime(at) {
 // 아래 함수들은 인자 객체에서 **아는 필드만** 읽는다. 호출부가 설정 객체를 통째로
 // 넘겨도 토큰·API 키가 본문에 섞일 수 없게 하기 위한 의도적인 제약이다.
 
+// 제목이 없다고 던지지 않는다.
+//
+// event-sources.js는 제목이 문자열이 아니면 의도적으로 ''로 정규화하고,
+// classifyMaterial은 빈 제목이어도 카테고리 폴백('거래유의')으로 S급을 준다.
+// 그리고 event-trader.js에서 이 함수의 호출은 `notify(format...())` 즉 notify의
+// **인자**라 notify가 감싸 둔 try/catch 밖에서 평가된다. 여기서 던지면 TypeError가
+// pollOnce를 뚫고 나가 폴링 배치가 통째로 중단되고, 같은 배치의 남은 재료까지
+// 전부 버려진다. 이 모듈이 formatHaltAlert에서 이미 세워 둔 정책("던지면 최악의
+// 순간에 침묵한다")을 여기서도 따른다 — 제목 없는 알림이 알림 없음보다 낫다.
+const MISSING_TITLE = '(제목 없음)';
+
 function pickTitle(event) {
   const title = event && typeof event.title === 'string' ? event.title.trim() : '';
-  if (!title) {
-    throw new TypeError('알림에 넣을 재료 제목(event.title)이 없습니다');
-  }
-  return title;
+  return title || MISSING_TITLE;
+}
+
+// 티커는 이벤트가 아니라 **분류기**가 안다.
+//
+// event-sources.js의 EVENT_KEYS는 id·source·at·title·category·url·updatedAt 뿐이고
+// event-trader.js는 그 정규화 이벤트를 그대로 넘긴다. event.symbol만 읽으면 실제
+// 파이프라인에서는 첫 줄에 종목이 영영 찍히지 않는다.
+// tryEnter가 material.tickers[0]으로 주문을 내므로 여기서도 같은 자리를 읽는다 —
+// 알림이 가리키는 종목과 주문이 나가는 종목이 어긋나면 안 된다.
+// event.symbol은 정규화를 거치지 않은 원본 페이로드를 직접 넘기는 호출부를 위한
+// 대체 경로로만 남긴다.
+function pickSymbol(event, material) {
+  const traded = material && Array.isArray(material.tickers) ? material.tickers[0] : null;
+  const raw =
+    typeof traded === 'string' && traded.trim()
+      ? traded
+      : typeof event.symbol === 'string'
+        ? event.symbol
+        : '';
+  return raw.trim() ? raw.trim().toUpperCase() : null;
 }
 
 // 빗썸·업비트 원본 페이로드의 필드명이 서로 다르고 아직 정규화 계층이 없다.
@@ -161,10 +201,14 @@ const pickUrl = (e) => (typeof (e.url ?? e.pc_url) === 'string' ? (e.url ?? e.pc
 function gradeLabel(material) {
   const grade = material && typeof material.grade === 'string' ? material.grade.trim().toUpperCase() : '';
   const kind = material && typeof material.kind === 'string' && material.kind.trim() ? material.kind.trim() : '재료';
+  // 방향을 모르면 neutral로 떨어진다. 호재 표식으로 위장하지 않기 위해서다.
+  const direction = material && typeof material.direction === 'string' ? material.direction.trim().toLowerCase() : '';
+  const set = MARKERS.event[direction] ?? MARKERS.event.neutral;
   // 등급 분류에 실패했다고 알림을 막지 않는다 — 분류기가 모르는 재료가 제일 클 수도 있다.
   // 다만 모른다는 사실은 숨기지 않는다.
-  const marker = MARKERS.event[grade] ?? MARKERS.event.unknown;
-  return { marker, label: grade ? `${grade}급 ${kind}` : `등급미상 ${kind}` };
+  const marker = set[grade] ?? set.unknown;
+  const arrow = DIRECTION_ARROWS[direction] ?? '';
+  return { marker, label: `${grade ? `${grade}급` : '등급미상'} ${arrow}${kind}` };
 }
 
 function formatEventAlert({ event, material } = {}) {
@@ -172,7 +216,7 @@ function formatEventAlert({ event, material } = {}) {
   const title = pickTitle(e);
   const { marker, label } = gradeLabel(material);
 
-  const symbol = typeof e.symbol === 'string' && e.symbol.trim() ? e.symbol.trim().toUpperCase() : null;
+  const symbol = pickSymbol(e, material);
   const lines = [`${marker} [${label}]${symbol ? ` ${symbol}` : ''}`, title];
 
   const source = typeof e.source === 'string' && e.source.trim() ? e.source.trim() : null;
@@ -280,11 +324,20 @@ function formatExitAlert({ symbol, outcome, returnBps, holdSec, pnlKrw, simulate
   return lines.join('\n');
 }
 
+// 텔레그램 봇 토큰의 생김새: 숫자 봇 id + ':' + 35자 안팎의 시크릿.
+// formatHaltAlert는 이 모듈에서 **유일하게 임의 문자열을 그대로 통과시키는** 경로다
+// (중단 사유는 호출부에서 err.message로 조립된다). 그 err가 요청 URL을 message에
+// 담고 있으면 경로의 /bot<token>/ 이 알림에도 로그에도 그대로 남는다. 토큰은 사람이
+// 취소하기 전까지 유효하므로 되돌릴 수 없는 사고다 — 사유를 통과시키되 토큰 모양만
+// 걷어낸다.
+const TOKEN_SHAPE = /\d{5,}:[A-Za-z0-9_-]{20,}/g;
+const REDACTED = '<토큰가림>';
+
 function formatHaltAlert({ reason } = {}) {
   // 중단 알림은 가장 중요한 알림이다. 사유를 못 채웠다고 던져서 알림을 막으면
   // 최악의 순간에 침묵한다. 대신 모른다는 사실을 그대로 적는다.
-  const text = typeof reason === 'string' && reason.trim() ? reason.trim() : '(미상)';
-  return `${MARKERS.halt} 매매 중단\n사유: ${text}`;
+  const raw = typeof reason === 'string' && reason.trim() ? reason.trim() : '(미상)';
+  return `${MARKERS.halt} 매매 중단\n사유: ${raw.replace(TOKEN_SHAPE, REDACTED)}`;
 }
 
 // ── 전송 (네트워크) ────────────────────────────────────────────────────────
@@ -314,6 +367,26 @@ function clampText(text) {
   const last = cut.charCodeAt(cut.length - 1);
   if (last >= 0xd800 && last <= 0xdbff) cut = cut.slice(0, -1);
   return cut + TRUNCATED_SUFFIX;
+}
+
+// 오류 응답 본문 읽기. 실패해도 던지지 않는다 — 본문 파싱 에러가 전송 실패 보고를
+// 덮으면 호출부가 "무슨 오류인지" 대신 "JSON 파싱 실패"를 보게 된다. 텔레그램 앞단의
+// 프록시는 429에 HTML을 돌려주기도 한다.
+async function readErrorBody(res) {
+  try {
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
+
+// retry_after는 초 단위 숫자다. 없으면 0으로 위장하지 않는다 — 0은 호출부에게
+// "지금 바로 재시도해도 된다"는 뜻이 되어 밴을 늘린다. 모르면 필드를 달지 않는다.
+function attachRetryAfter(err, body) {
+  const value = body && body.parameters ? body.parameters.retry_after : undefined;
+  if (typeof value === 'number' && Number.isFinite(value) && value >= 0) {
+    err.retryAfter = value;
+  }
 }
 
 // 얇은 fetch 래퍼. 순수 로직을 테스트 가능하게 두기 위해 fetchImpl을 주입받는다.
@@ -369,6 +442,10 @@ async function sendMessage({
     // 상태와 method만 넣는다. 응답 본문을 붙이면 프록시가 URL을 되돌려줄 때 토큰이 샌다.
     const err = new Error(`텔레그램 ${method} 실패: HTTP ${res.status}`);
     err.status = res.status;
+    // 429에서 "얼마나 기다려야 하는지"는 오직 본문의 parameters.retry_after에만 있다.
+    // 그 숫자가 없으면 호출부는 눈을 감고 재시도해 rate limit을 스스로 늘린다.
+    // 본문 전체를 message에 붙이는 대신 **숫자 하나만** 필드로 옮겨 토큰 규칙을 지킨다.
+    attachRetryAfter(err, await readErrorBody(res));
     throw err;
   }
 
@@ -382,6 +459,7 @@ async function sendMessage({
   if (json && json.ok === false) {
     const err = new Error(`텔레그램 ${method} 거부: error_code ${json.error_code ?? '미상'}`);
     err.status = res.status;
+    attachRetryAfter(err, json);
     throw err;
   }
   return json?.result ?? null;
