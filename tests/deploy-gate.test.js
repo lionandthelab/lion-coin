@@ -94,6 +94,38 @@ test('evaluateDeployGate: 열린 포지션이 있으면 막는다', () => {
   assert.ok(r.blockers.some((b) => b.code === BLOCKER.POSITION_OPEN));
 });
 
+// ---- 커밋되지 않은 코드 ----
+//
+// 실제로 겪은 일: 다른 프로세스가 검증을 위해 소스에 결함을 심어 둔 순간에
+// 게이트를 돌렸더니 **통과했다.** 게이트는 "테스트가 통과했는가"만 보고
+// "그 테스트가 어느 코드에 대한 것인가"는 보지 않았다.
+//
+// 커밋되지 않은 코드는 되돌릴 대상이 없다. version-log가 배포 기록에 커밋
+// 해시를 요구하는 것과 같은 이유다 — 해시가 없으면 롤백 자체가 불가능하다.
+
+test('evaluateDeployGate: 커밋되지 않은 변경이 있으면 막는다', () => {
+  const r = evaluateDeployGate(ok({ dirtyFiles: [' M src/event-engine.js'] }));
+  assert.equal(r.pass, false);
+  assert.ok(r.blockers.some((b) => b.code === BLOCKER.TREE_DIRTY));
+});
+
+test('evaluateDeployGate: 차단 메시지에 어느 파일인지 적는다', () => {
+  const r = evaluateDeployGate(ok({ dirtyFiles: [' M src/event-engine.js', '?? scratch.js'] }));
+  const b = r.blockers.find((x) => x.code === BLOCKER.TREE_DIRTY);
+  assert.match(b.message, /event-engine/, '무엇을 커밋해야 하는지 알아야 조치할 수 있다');
+});
+
+test('evaluateDeployGate: 깨끗한 트리는 통과한다', () => {
+  assert.equal(evaluateDeployGate(ok({ dirtyFiles: [] })).pass, true);
+});
+
+test('evaluateDeployGate: 트리 상태를 모르면 경고하되 막지는 않는다', () => {
+  // git이 없는 환경에서 배포를 영영 막으면 게이트가 도구가 아니라 벽이 된다.
+  const r = evaluateDeployGate(ok({ dirtyFiles: null }));
+  assert.equal(r.pass, true);
+  assert.ok(r.warnings.some((w) => /작업 트리|커밋/.test(w)), JSON.stringify(r.warnings));
+});
+
 test('evaluateDeployGate: 실거래 모드면 경고하되 막지는 않는다', () => {
   // 막아버리면 실거래 중에는 영원히 개선할 수 없다. 사람이 알고 결정하게 한다.
   const r = evaluateDeployGate(ok({ mode: 'live' }));
