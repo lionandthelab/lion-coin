@@ -18,3 +18,5 @@ _site/
 # 백테스트용 캔들 캐시 (재생성 가능)
 data/
 proposals/
+reviews/
+harness/improve/

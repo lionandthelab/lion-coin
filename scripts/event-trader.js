@@ -29,6 +29,8 @@ const sources = require('../src/event-sources');
 const eventPlan = require('../src/event-plan');
 const fsm = require('../src/event-engine');
 const telegram = require('../src/telegram');
+const writer = require('../src/review-writer');
+const { summarizeDay, proposeCalibration, postExitKey } = require('../src/daily-review');
 
 const PORT = Number(process.env.EVENT_PORT || 8788);
 const CONFIG_PATH = path.join(__dirname, '..', 'harness', 'event-trading.json');
@@ -62,6 +64,36 @@ let knownSymbols = [];
 let lastSymbolFetch = 0;
 let marketContext = { regime: 'neutral', multiplier: 1, reason: '아직 평가 전' };
 let tgLastSentAt = null;
+
+// **청산 후에도 가격을 계속 추적한다 — 이게 복기의 재료다.**
+// 손절로 나왔는데 그 뒤 반등했다면 손절이 좁았던 것이고, 익절로 나왔는데 그 뒤 더 갔다면
+// 익절이 빨랐던 것이다. 청산 시점의 손익만 보면 이 둘을 구별할 수 없다.
+const postExits = new Map();   // 'SYM@진입시각' → {symbol, until, highest, lowest}
+const IMPROVE_DIR = path.join(__dirname, '..', 'harness', 'improve');
+const TRADE_LOG = path.join(IMPROVE_DIR, 'trade-log.jsonl');
+
+function kstDate(ms = Date.now()) {
+  return new Date(ms + 9 * 3600 * 1000).toISOString().slice(0, 10);
+}
+function saveJson(file, value) {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, JSON.stringify(value, null, 1));
+}
+
+// 개선 사이클(별도 프로세스)이 읽을 수 있게 파일로 남긴다.
+function persistDay() {
+  const date = kstDate();
+  const start = new Date(new Date(kstDate() + 'T00:00:00+09:00')).getTime();
+  saveJson(path.join(IMPROVE_DIR, `day-${date}.json`), {
+    trades: trades.filter((t) => t.at >= start),
+    events: events.filter((e) => e.at >= start).map((e) => ({
+      grade: e.grade, direction: e.direction, traded: e.traded, reason: e.reason,
+    })),
+    postExits: Object.fromEntries([...postExits.entries()].map(([k, v]) => [k, { highest: v.highest, lowest: v.lowest }])),
+  });
+  saveJson(path.join(IMPROVE_DIR, 'mode.json'), { mode });
+  saveJson(path.join(IMPROVE_DIR, 'position.json'), positionView());
+}
 
 function recordError(message) {
   errors.unshift({ at: Date.now(), message: String(message).slice(0, 300) });
@@ -268,6 +300,21 @@ async function tryEnter(row, m) {
 }
 
 // 보유 중 모니터링 — 익절·손절·시간초과를 감시하다 조건 충족 시 즉시 시장가 청산.
+// 청산된 종목의 가격을 추적 기한까지 계속 읽는다.
+async function trackPostExits() {
+  const now = Date.now();
+  for (const [key, pe] of [...postExits.entries()]) {
+    if (now > pe.until) continue;      // 기한이 지난 것은 그대로 굳힌다
+    try {
+      const book = await bithumb.fetchOrderbook(pe.symbol);
+      const px = book.bid;
+      if (!(px > 0)) continue;
+      pe.highest = pe.highest == null ? px : Math.max(pe.highest, px);
+      pe.lowest = pe.lowest == null ? px : Math.min(pe.lowest, px);
+    } catch { /* 사후 추적 실패가 매매를 막아선 안 된다 */ }
+  }
+}
+
 async function priceTick() {
   if (state.status !== 'HOLDING' && state.status !== 'EXITING') return;
   const symbol = state.material && state.material.tickers ? state.material.tickers[0] : null;
@@ -312,6 +359,27 @@ async function priceTick() {
   });
   if (trades.length > 100) trades.pop();
 
+  // 청산 후 추적 시작 — 이 기록이 "익절·손절이 옳았는가"의 유일한 근거다.
+  // 최대 보유시간의 3배까지 본다. 그보다 길게 보면 재료와 무관한 시장 움직임이 섞인다.
+  const maxHold = state.deadlineAt && entryAt
+    ? Math.round((state.deadlineAt - entryAt) / 1000) : config.priceTickSec * 60;
+  const rec = { at: Date.now(), symbol, grade, entryPrice, exitPrice: price,
+    returnBps, pnlKrw, outcome: r.action.reason, holdSec,
+    takeProfitBps: state.plan ? state.plan.takeProfitBps : null,
+    stopLossBps: state.plan ? state.plan.stopLossBps : null,
+    simulated: mode !== 'live' };
+  postExits.set(postExitKey(rec), {
+    symbol, until: Date.now() + maxHold * 3 * 1000, highest: price, lowest: price,
+  });
+  trades[0] = rec;   // 방금 unshift한 항목을 손익폭 정보까지 담아 갱신
+
+  // 개선 사이클이 버전별 실적을 붙일 수 있게 append-only 로그로 남긴다.
+  try {
+    fs.mkdirSync(IMPROVE_DIR, { recursive: true });
+    fs.appendFileSync(TRADE_LOG, JSON.stringify(rec) + '\n');
+  } catch (err) { recordError(`거래 로그 기록 실패: ${err.message}`); }
+  persistDay();
+
   state = fsm.onExitConfirmed(state, { price, now: Date.now() }).state;
   await notify(telegram.formatExitAlert({
     symbol, outcome: r.action.reason, returnBps, holdSec, pnlKrw, simulated: mode !== 'live',
@@ -325,7 +393,11 @@ function startLoops() {
     pollTimer = setInterval(poll, config.pollIntervalSec * 1000);
   }
   if (!tickTimer) {
-    const tick = () => { if (mode !== 'stopped') priceTick().catch((e) => recordError(e.message)); };
+    const tick = () => {
+      if (mode === 'stopped') return;
+      priceTick().catch((e) => recordError(e.message));
+      trackPostExits().catch(() => {});
+    };
     tickTimer = setInterval(tick, config.priceTickSec * 1000);
   }
   refreshMarketContext();
@@ -422,6 +494,62 @@ const server = http.createServer(async (req, res) => {
       liveApproved: LIVE_APPROVED, hasKeys: HAS_KEYS,
       errors: errors.slice(0, 10),
     });
+    return;
+  }
+
+  // ── 복기 ──
+  if (url.pathname === '/api/reviews') {
+    const dates = writer.listReviews();
+    json(res, 200, {
+      dates,
+      today: kstDate(),
+      // 오늘치는 아직 파일이 없을 수 있다 — 지금까지의 집계를 미리보기로 준다.
+      preview: (() => {
+        const start = new Date(kstDate() + 'T00:00:00+09:00').getTime();
+        const sum = summarizeDay({
+          date: kstDate(),
+          trades: trades.filter((t) => t.at >= start),
+          events: events.filter((e) => e.at >= start),
+          postExits: Object.fromEntries([...postExits.entries()]
+            .map(([k, v]) => [k, { highest: v.highest, lowest: v.lowest }])),
+        });
+        return { summary: sum, calibration: proposeCalibration([sum]) };
+      })(),
+    });
+    return;
+  }
+
+  if (url.pathname === '/api/review') {
+    const date = url.searchParams.get('date');
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date || '')) {
+      json(res, 400, { error: '날짜 형식이 올바르지 않습니다 (YYYY-MM-DD)' });
+      return;
+    }
+    const body = writer.readReview(date);
+    if (body == null) { json(res, 404, { error: '해당 날짜의 복기문이 없습니다' }); return; }
+    json(res, 200, { date, body });
+    return;
+  }
+
+  if (url.pathname === '/api/review/generate' && req.method === 'POST') {
+    // 오늘치 복기문을 지금 만든다. 자정을 기다리지 않고 확인할 수 있어야 한다.
+    try {
+      const date = kstDate();
+      const start = new Date(date + 'T00:00:00+09:00').getTime();
+      const sum = summarizeDay({
+        date,
+        trades: trades.filter((t) => t.at >= start),
+        events: events.filter((e) => e.at >= start),
+        postExits: Object.fromEntries([...postExits.entries()]
+          .map(([k, v]) => [k, { highest: v.highest, lowest: v.lowest }])),
+      });
+      const cal = proposeCalibration([sum]);
+      const file = writer.writeReview({ date, summary: sum, calibration: cal });
+      persistDay();
+      json(res, 200, { ok: true, date, file: path.basename(file) });
+    } catch (err) {
+      json(res, 500, { ok: false, error: err.message });
+    }
     return;
   }
 

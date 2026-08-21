@@ -103,6 +103,19 @@
   input[type=text] { font: inherit; padding: 8px 11px; border-radius: 6px;
                      border: 1px solid var(--line); background: var(--bg); color: var(--text); }
   .empty { color: var(--faint); font-size: 13px; padding: 20px 0; text-align: center; }
+  /* 복기문은 길다. 읽기 위한 폭과 줄간격을 따로 준다. */
+  .review-body { line-height: 1.75; max-width: 78ch; }
+  .review-body h1 { font-size: 17px; margin: 0 0 14px; }
+  .review-body h2 { font-size: 13px; margin: 22px 0 8px; color: var(--dim);
+                    text-transform: none; letter-spacing: 0; }
+  .review-body h3 { font-size: 13px; margin: 16px 0 6px; color: var(--text); }
+  .review-body ul { padding-left: 20px; margin: 8px 0; }
+  .review-body li { margin: 4px 0; }
+  .review-body table { margin: 10px 0; }
+  .review-body blockquote { margin: 12px 0; padding: 10px 14px; border-left: 3px solid var(--warn);
+                            background: var(--panel2); border-radius: 0 6px 6px 0; color: var(--dim); }
+  .review-body hr { border: 0; border-top: 1px solid var(--line); margin: 22px 0; }
+  .review-body strong { color: var(--text); }
 </style>
 
 <div class="wrap">
@@ -193,6 +206,16 @@
 
   <h2>오늘의 매매</h2>
   <div class="panel"><div id="trades"></div></div>
+
+  <h2>일일 복기 <span class="sub" id="rvCount"></span></h2>
+  <div class="panel">
+    <div class="row" style="align-items:center;margin-bottom:12px">
+      <select id="rvPick" style="font:inherit;padding:8px 11px;border-radius:6px;border:1px solid var(--line);background:var(--bg);color:var(--text);min-width:190px"></select>
+      <button id="rvGen">오늘치 복기문 만들기</button>
+      <span class="sub grow" id="rvNote"></span>
+    </div>
+    <div id="rvBody" class="review-body"></div>
+  </div>
 
   <h2 style="margin-bottom:6px">설정</h2>
   <div class="panel"><div id="cfg" class="sub" style="line-height:1.9"></div></div>
@@ -375,6 +398,94 @@ function renderTrades(s) {
   $('trades').innerHTML = html + '</table>';
 }
 
+// 복기문은 마크다운이다. 외부 라이브러리 없이 필요한 것만 변환한다 —
+// 표·목록·인용·굵게. 그 이상은 복기문에 쓰지 않는다.
+function md(text) {
+  var lines = String(text).split('\n');
+  var out = [], i = 0;
+  function inline(t) {
+    return esc(t)
+      .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+      .replace(/`([^`]+)`/g, '<code>$1</code>');
+  }
+  while (i < lines.length) {
+    var l = lines[i];
+    if (/^\|/.test(l) && i + 1 < lines.length && /^\|[\s:|-]+\|/.test(lines[i + 1])) {
+      var head = l.split('|').slice(1, -1).map(function (c) { return '<th>' + inline(c.trim()) + '</th>'; });
+      i += 2;
+      var rows = [];
+      while (i < lines.length && /^\|/.test(lines[i])) {
+        rows.push('<tr>' + lines[i].split('|').slice(1, -1)
+          .map(function (c) { return '<td>' + inline(c.trim()) + '</td>'; }).join('') + '</tr>');
+        i += 1;
+      }
+      out.push('<table><tr>' + head.join('') + '</tr>' + rows.join('') + '</table>');
+      continue;
+    }
+    if (/^### /.test(l)) { out.push('<h3>' + inline(l.slice(4)) + '</h3>'); i += 1; continue; }
+    if (/^## /.test(l)) { out.push('<h2>' + inline(l.slice(3)) + '</h2>'); i += 1; continue; }
+    if (/^# /.test(l)) { out.push('<h1>' + inline(l.slice(2)) + '</h1>'); i += 1; continue; }
+    if (/^---+$/.test(l)) { out.push('<hr>'); i += 1; continue; }
+    if (/^> /.test(l)) { out.push('<blockquote>' + inline(l.slice(2)) + '</blockquote>'); i += 1; continue; }
+    if (/^\s*[-*] /.test(l)) {
+      var items = [];
+      while (i < lines.length && /^\s*[-*] /.test(lines[i])) {
+        items.push('<li>' + inline(lines[i].replace(/^\s*[-*] /, '')) + '</li>');
+        i += 1;
+      }
+      out.push('<ul>' + items.join('') + '</ul>');
+      continue;
+    }
+    if (l.trim()) out.push('<p>' + inline(l) + '</p>');
+    i += 1;
+  }
+  return out.join('');
+}
+
+var rvLoaded = null;
+async function refreshReviews() {
+  var r;
+  try { r = await (await fetch('/api/reviews')).json(); }
+  catch (e) { return; }
+  var pick = $('rvPick');
+  var want = pick.value || r.today;
+  var opts = ['<option value="' + esc(r.today) + '">오늘 (' + esc(r.today) + ') — 미리보기</option>'];
+  for (var i = 0; i < r.dates.length; i++) {
+    if (r.dates[i] === r.today) continue;
+    opts.push('<option value="' + esc(r.dates[i]) + '">' + esc(r.dates[i]) + '</option>');
+  }
+  pick.innerHTML = opts.join('');
+  pick.value = r.dates.indexOf(want) >= 0 || want === r.today ? want : r.today;
+  $('rvCount').textContent = r.dates.length ? '— 저장된 복기문 ' + r.dates.length + '건' : '— 아직 저장된 복기문 없음';
+
+  if (pick.value === r.today && r.dates.indexOf(r.today) < 0) {
+    // 오늘치는 파일이 아직 없다 — 지금까지의 집계로 미리보기를 만든다.
+    var p = r.preview;
+    $('rvBody').innerHTML = md(
+      '# ' + r.today + ' 복기 (미리보기)\n\n'
+      + '거래 ' + p.summary.tradeCount + '건 · 판정 가능 ' + p.summary.judgedCount + '건\n\n'
+      + '## 보정 판단\n\n' + p.calibration.reason + '\n\n'
+      + (p.summary.sampleWarning ? '> ' + p.summary.sampleWarning : '')
+    );
+    $('rvNote').textContent = '아직 파일로 저장되지 않았습니다.';
+    rvLoaded = null;
+    return;
+  }
+  if (rvLoaded !== pick.value) await loadReview(pick.value);
+}
+
+async function loadReview(date) {
+  try {
+    var r = await (await fetch('/api/review?date=' + encodeURIComponent(date))).json();
+    if (r.error) { $('rvBody').innerHTML = '<div class="empty">' + esc(r.error) + '</div>'; return; }
+    $('rvBody').innerHTML = md(r.body);
+    $('rvNote').textContent = 'reviews/' + date + '.md';
+    rvLoaded = date;
+  } catch (e) {
+    $('rvBody').innerHTML = '<div class="empty">복기문을 읽지 못했습니다: ' + esc(e.message) + '</div>';
+  }
+}
+
 function renderConfig(s) {
   var c = s.config || {};
   $('cfg').innerHTML =
@@ -441,7 +552,22 @@ $('lcGo').addEventListener('click', function () {
   setMode('live', true);
 });
 
+$('rvPick').addEventListener('change', function () { loadReview(this.value); });
+$('rvGen').addEventListener('click', async function () {
+  this.disabled = true;
+  $('rvNote').textContent = '만드는 중…';
+  try {
+    var r = await (await fetch('/api/review/generate', { method: 'POST' })).json();
+    $('rvNote').textContent = r.ok ? '저장됨: reviews/' + r.file : '실패: ' + esc(r.error);
+    rvLoaded = null;
+    await refreshReviews();
+  } finally { this.disabled = false; }
+});
+
 refresh();
+refreshReviews();
+// 복기문은 자주 안 바뀐다 — 30초마다면 충분하다.
+setInterval(refreshReviews, 30000);
 // 실시간 시스템이라 1초 주기로 갱신한다. 보유 중에는 남은 시간과 손익이 계속 움직인다.
 setInterval(refresh, 1000);
 </script>
