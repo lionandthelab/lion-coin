@@ -600,11 +600,39 @@ test('dedupeNewEvents: 배치가 maxSeen보다 커도 최신 공지부터 버리
   const poll2 = dedupeNewEvents(newestFirst(6525, 20), poll1.seenIds, { maxSeen: 10 });
   assert.deepEqual(poll2.fresh.map((e) => e.id), [], '방금 본 최신 공지가 새 재료로 되살아나면 안 된다');
 
-  // 절삭 후에도 남는 것은 가장 최신 id들이어야 한다.
+  // 절삭 후에도 남는 것은 가장 최신 id들이어야 한다. 그리고 남는 개수는 **이번 폴링에서
+  // 본 배치 전체**다 — 20건을 보고 10건만 남기면, 다음 폴링에 같은 20건이 왔을 때
+  // 나머지 10건이 새 재료로 되살아난다.
   assert.deepEqual(
     [...poll2.seenIds].sort(),
-    newestFirst(6525, 10).map((e) => e.id).sort()
+    newestFirst(6525, 20).map((e) => e.id).sort()
   );
+});
+
+test('dedupeNewEvents: 항목이 추가되지 않은 폴링에서도 배치를 잊지 않는다', () => {
+  // 하한이 added.length에 걸려 있으면 **항목이 추가된 폴링에서만** 발동한다.
+  // 바로 다음 폴링은 새 항목이 없어 added=0이 되고, 상한이 원래 값으로 되돌아가
+  // 방금 기억하기로 한 것을 즉시 잊는다. 그리고 그 다음 폴링에서 잊은 것들이
+  // 새 재료로 되살아난다 — 이미 다 반영된 자리에서 진입하게 만드는, 이 모듈이
+  // 가장 피하려는 실패다. 한 번의 폴링만 보면 정상으로 보여 놓치기 쉽다.
+  const mk = (i) => ({ id: `upbit:${i}`, source: 'upbit', at: i, title: `t${i}`, category: null, url: null, updatedAt: null });
+  const newestFirst = (from, count) => Array.from({ length: count }, (_, k) => mk(from - k));
+
+  const batch = newestFirst(6525, 30);
+  let seen = new Set();
+  const freshCounts = [];
+  const newestRefiredAt = [];
+  for (let poll = 1; poll <= 5; poll += 1) {
+    const r = dedupeNewEvents(batch, seen, { maxSeen: 10 });
+    freshCounts.push(r.fresh.length);
+    if (poll > 1 && r.fresh.some((e) => e.id === 'upbit:6525')) newestRefiredAt.push(poll);
+    seen = r.seenIds;
+  }
+
+  assert.deepEqual(freshCounts, [30, 0, 0, 0, 0],
+    '같은 배치를 계속 받는데 새 재료가 다시 생겼다');
+  assert.deepEqual(newestRefiredAt, [],
+    '가장 최신 공지가 다시 새 재료로 발화했다 — 이미 반영된 자리에서 진입한다');
 });
 
 test('parseUpbitNotices: id가 없는 공지들이 upbit:undefined 하나로 뭉치지 않는다', () => {
