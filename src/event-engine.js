@@ -336,10 +336,18 @@ function onExitConfirmed(state, { price, now } = {}) {
   if (!hadExitOrder) {
     return { state, action: none(`내지 않은 청산의 확인은 무시합니다 (현재 ${state.status})`) };
   }
-  assertPositive(price, 'price');
+  // **모르는 체결가(null)는 받는다.** onPriceTick이 가격을 모른 채 시간초과
+  // 청산을 지시하는 경로를 일부러 만들어 두었는데(호가가 통째로 빈 종목에서
+  // 나올 수 없게 되는 것을 막으려고), 그 지시로 나간 청산의 확인을 받을 자리가
+  // 없으면 상태 기계는 EXITING에 굳고 포지션은 아무도 보지 않는다.
+  //
+  // null과 0은 다르다. null은 "모른다"이고 0은 "0원에 체결됐다"는 확정된 거짓이라
+  // -100% 손익이 기록에 남아 복기와 롤백 판정을 오염시킨다. 0은 계속 거부한다.
+  const priceKnown = price !== null && price !== undefined;
+  if (priceKnown) assertPositive(price, 'price');
   const exitAt = toEpochMs(now, 'now');
 
-  const pnlBps = (price / state.entryPrice - 1) * 10000;
+  const pnlBps = priceKnown ? (price / state.entryPrice - 1) * 10000 : null;
   const costBps = state.plan && typeof state.plan.costBps === 'number' ? state.plan.costBps : null;
 
   const lastTrade = {
@@ -347,7 +355,7 @@ function onExitConfirmed(state, { price, now } = {}) {
     material: state.material,
     reason: state.exitReason,
     entryPrice: state.entryPrice,
-    exitPrice: price,
+    exitPrice: priceKnown ? price : null,
     quantity: state.quantity,
     entryAt: state.entryAt,
     exitAt,
@@ -355,7 +363,7 @@ function onExitConfirmed(state, { price, now } = {}) {
     pnlBps,
     // 비용을 모르면 0으로 위장하지 않는다 — 수수료를 뺀 값처럼 보이는 총손익이
     // 가장 위험한 숫자다.
-    netPnlBps: costBps === null ? null : pnlBps - costBps,
+    netPnlBps: costBps === null || pnlBps === null ? null : pnlBps - costBps,
   };
 
   // HALTED는 사람이 풀어야 한다. 청산이 끝났다고 스스로 IDLE로 돌아가면

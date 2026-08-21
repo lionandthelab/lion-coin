@@ -510,6 +510,35 @@ test('onExitFailed: HALTED로 굳은 포지션은 수량을 든 채 침묵하지
   assert.equal(action.entryPrice, 100);
 });
 
+// ---- 가격을 모르는 채 나온 청산 ----
+//
+// onPriceTick은 가격을 모르면 `price: null`을 실어 시간초과 청산을 지시한다
+// (호가가 통째로 빈 종목에서 나올 수 없게 되는 것을 막으려고 그렇게 만들었다).
+// 그런데 그 지시를 받아 청산한 뒤 확인을 넣을 자리가 없으면, 상태 기계는
+// EXITING에 굳고 포지션은 아무도 보지 않는다 — 막으려던 바로 그 상태다.
+
+test('onExitConfirmed: 체결가를 모르면 null로 받되 손익을 지어내지 않는다', () => {
+  // holding()은 T0+500에 체결되고 PLAN.maxHoldSec는 60초다 → 마감 T0+60,500.
+  const exiting = onPriceTick(holding(), { price: undefined, now: T0 + 61_000 }).state;
+  assert.equal(exiting.status, STATES.EXITING, '먼저 가격 없는 청산이 지시됐는지 확인');
+
+  const { state, action } = onExitConfirmed(exiting, { price: null, now: T0 + 61_100 });
+  assert.equal(state.status, STATES.IDLE, '확인을 못 받으면 EXITING에 굳는다');
+  assert.equal(state.quantity, null, '포지션이 정리돼야 한다');
+  assert.equal(state.lastTrade.exitPrice, null, '모르는 체결가를 지어내면 기록이 거짓이 된다');
+  assert.equal(state.lastTrade.pnlBps, null, '가격을 모르는데 손익을 계산할 수는 없다');
+  assert.equal(action.type, 'notify');
+});
+
+test('onExitConfirmed: 0이나 음수는 여전히 거부한다', () => {
+  // null은 "모른다"이고 0은 "0원에 체결됐다"는 확정된 거짓이다. 둘을 같이 받으면
+  // -100% 손익이 기록에 남아 복기와 롤백 판정을 오염시킨다.
+  const exiting = onPriceTick(holding(), { price: 98, now: T0 + 1000 }).state;
+  for (const bad of [0, -1, NaN, '98']) {
+    assert.throws(() => onExitConfirmed(exiting, { price: bad, now: T0 + 1100 }), RangeError, String(bad));
+  }
+});
+
 // ---- 재시도가 끝나지 않을 때 ----
 //
 // 재시도를 멈추면 안 된다 — 포지션은 반드시 나와야 하고, 멈추는 순간 고아가 된다.

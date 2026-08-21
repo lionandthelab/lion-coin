@@ -357,13 +357,20 @@ async function priceTick() {
     return;
   }
 
-  let price;
+  // **가격을 못 읽어도 판정은 돌린다.**
+  // 여기서 return하면 상태 기계가 바로 이 경우를 위해 만든 시간초과 경로가
+  // 유일한 운영 호출처에서 도달 불가능해진다(src/event-engine.js: "나올 수 없는
+  // 것보다 가격을 모르는 채 나오는 편이 낫다"). 그리고 호가가 마르는 종목이
+  // 정확히 이 전략이 노리는 종목이다 — 거래정지·유의종목 지정 직후.
+  // 가장 크게 물릴 수 있는 자리에서만 청산이 멈춘다.
+  //
+  // null을 넘기면 익절·손절만 포기하고 시간초과는 그대로 판정된다.
+  let price = null;
   try {
     const book = await bithumb.fetchOrderbook(symbol);
     price = book.bid; // 청산은 매도라 매수호가를 친다
   } catch (err) {
     recordError(`${symbol} 가격 조회 실패: ${err.message}`);
-    return;
   }
 
   const entryPrice = state.entryPrice;
@@ -400,11 +407,14 @@ async function priceTick() {
   }
 
   const holdSec = Math.round((Date.now() - entryAt) / 1000);
-  const returnBps = (price / entryPrice - 1) * 10000 - config.feeBps * 2;
-  const pnlKrw = (quantity * entryPrice * returnBps) / 10000;
+  // 가격을 모르면 손익도 모른다. 0으로 채우면 -100% 같은 거짓 기록이 남고,
+  // 그 기록이 복기와 버전별 실적 비교의 근거가 된다.
+  const priceKnown = price > 0;
+  const returnBps = priceKnown ? (price / entryPrice - 1) * 10000 - config.feeBps * 2 : null;
+  const pnlKrw = priceKnown ? (quantity * entryPrice * returnBps) / 10000 : null;
 
   trades.unshift({
-    at: Date.now(), symbol, grade, entryPrice, exitPrice: price,
+    at: Date.now(), symbol, grade, entryPrice, exitPrice: priceKnown ? price : null,
     returnBps, pnlKrw, outcome: r.action.reason, holdSec, simulated: mode !== 'live',
   });
   if (trades.length > 100) trades.pop();
@@ -413,13 +423,16 @@ async function priceTick() {
   // 최대 보유시간의 3배까지 본다. 그보다 길게 보면 재료와 무관한 시장 움직임이 섞인다.
   const maxHold = state.deadlineAt && entryAt
     ? Math.round((state.deadlineAt - entryAt) / 1000) : config.priceTickSec * 60;
-  const rec = { at: Date.now(), symbol, grade, entryPrice, exitPrice: price,
+  const rec = { at: Date.now(), symbol, grade, entryPrice, exitPrice: priceKnown ? price : null,
     returnBps, pnlKrw, outcome: r.action.reason, holdSec,
     takeProfitBps: state.plan ? state.plan.takeProfitBps : null,
     stopLossBps: state.plan ? state.plan.stopLossBps : null,
     simulated: mode !== 'live' };
+  // **관측 전에는 null이다.** 청산가로 미리 채우면 daily-review의 "청산 후 가격
+  // 기록이 없습니다" 가드가 영영 참이 되지 않아, 사후 관측이 0건인데 복기가
+  // "익절이 옳았다"고 단정한다. 표본이 없다는 사실 자체가 지워진다.
   postExits.set(postExitKey(rec), {
-    symbol, until: Date.now() + maxHold * 3 * 1000, highest: price, lowest: price,
+    symbol, until: Date.now() + maxHold * 3 * 1000, highest: null, lowest: null,
   });
   trades[0] = rec;   // 방금 unshift한 항목을 손익폭 정보까지 담아 갱신
 
@@ -428,9 +441,12 @@ async function priceTick() {
     fs.mkdirSync(IMPROVE_DIR, { recursive: true });
     fs.appendFileSync(TRADE_LOG, JSON.stringify(rec) + '\n');
   } catch (err) { recordError(`거래 로그 기록 실패: ${err.message}`); }
-  persistDay();
 
-  state = fsm.onExitConfirmed(state, { price, now: Date.now() }).state;
+  state = fsm.onExitConfirmed(state, { price: priceKnown ? price : null, now: Date.now() }).state;
+  // **청산 확정 뒤에 저장한다.** 앞서 저장하면 아직 EXITING인 상태가 직렬화돼
+  // position.json에 유령 포지션이 굳는다. 그 파일을 배포 게이트가 읽으므로,
+  // 다음 거래가 끝날 때까지 POSITION_OPEN으로 영구 차단된다.
+  persistDay();
   await notify(telegram.formatExitAlert({
     symbol, outcome: r.action.reason, returnBps, holdSec, pnlKrw, simulated: mode !== 'live',
   }));
