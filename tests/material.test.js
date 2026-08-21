@@ -595,18 +595,46 @@ test('classifyMaterial: "신규상장" 표현도 상장 규칙으로 잡는다',
   assert.equal(usdt.kind, 'BTC/USDT상장');
 });
 
+// 이미 반영된 재료를 새 재료로 착각하면 남들이 다 빠져나온 자리에 들어간다.
+// 그것을 막는 표지 목록이라, **목록에서 항목이 사라지는 것**이 곧 결함이다.
+//
+// 그래서 필요한 표지를 여기에 하드코딩한다. src의 배열을 순회해 검사하면
+// 항목을 지웠을 때 그 항목의 단언도 함께 사라져 **절대 실패할 수 없는 테스트**가 된다
+// (실제로 '시점변경'은 그렇게 아무 데서도 검사되지 않고 있었다).
+// 순회는 "공개된 표지가 동작한다"만 증명하고, "필요한 표지가 공개돼 있다"는
+// 증명하지 못한다 — 정작 지켜야 할 쪽이 후자다.
+const REQUIRED_STALE_MARKERS = [
+  '(완료)',   // 업비트가 처리 끝난 공지 제목에 붙인다
+  '기간연장', // 유의 종목 지정 기간 연장 — 새 정보가 없다
+  '시점변경', // 일정만 미뤄진 공지
+  '변경안내', // 기존 공지의 내용 정정
+  '이벤트종료',
+];
+
+const expectStale = (marker) => {
+  const r = classifyMaterial({
+    title: `만트라(MANTRA) 거래 유의 종목 지정 안내 ${marker}`,
+    category: '거래',
+    source: 'upbit',
+    knownSymbols: KNOWN,
+  });
+  assert.equal(r.stale, true, `"${marker}" 가 stale로 잡혀야 합니다`);
+  assert.equal(r.grade, 'B', `"${marker}" 는 S급을 한 급 내려야 합니다`);
+};
+
+test('STALE_MARKERS: 필요한 표지가 하나라도 빠지면 실패한다', () => {
+  for (const marker of REQUIRED_STALE_MARKERS) {
+    assert.ok(STALE_MARKERS.includes(marker), `표지 "${marker}"가 목록에서 사라졌습니다`);
+    expectStale(marker);
+  }
+});
+
 test('STALE_MARKERS: 공개된 표지는 모두 실제로 stale 판정을 만든다', () => {
+  // 위 테스트의 반대 방향 — 목록에 있는데 동작하지 않는 죽은 항목이 없어야 한다.
   assert.ok(Array.isArray(STALE_MARKERS) && STALE_MARKERS.length > 0);
   for (const marker of STALE_MARKERS) {
     assert.equal(typeof marker, 'string');
-    const r = classifyMaterial({
-      title: `만트라(MANTRA) 거래 유의 종목 지정 안내 ${marker}`,
-      category: '거래',
-      source: 'upbit',
-      knownSymbols: KNOWN,
-    });
-    assert.equal(r.stale, true, `"${marker}" 가 stale로 잡혀야 합니다`);
-    assert.equal(r.grade, 'B', `"${marker}" 는 S급을 한 급 내려야 합니다`);
+    expectStale(marker);
   }
 });
 
