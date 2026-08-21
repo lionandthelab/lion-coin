@@ -17,6 +17,7 @@ const BLOCKER = {
   TESTS_UNKNOWN: 'TESTS_UNKNOWN',
   TESTS_REMOVED: 'TESTS_REMOVED',
   POSITION_OPEN: 'POSITION_OPEN',
+  TREE_DIRTY: 'TREE_DIRTY',
 };
 
 // `node --test` 요약을 읽는다. 요약이 없으면 null —
@@ -39,6 +40,8 @@ function evaluateDeployGate({
   baselineTests = null,
   openPosition = false,
   mode = 'stopped',
+  // `git status --porcelain` 결과를 줄 배열로. null이면 "모른다".
+  dirtyFiles = null,
 } = {}) {
   const blockers = [];
   const warnings = [];
@@ -67,6 +70,25 @@ function evaluateDeployGate({
     } else {
       warnings.push('기준 테스트 수가 없어 테스트 감소 검사를 건너뜁니다 (첫 배포이거나 이력이 유실됨).');
     }
+  }
+
+  // **커밋되지 않은 코드는 되돌릴 대상이 없다.**
+  // 실제로 겪은 일: 다른 프로세스가 검증을 위해 소스에 결함을 심어 둔 순간에
+  // 게이트를 돌렸더니 통과했다. 게이트가 "테스트가 통과했는가"만 보고 "그 테스트가
+  // 어느 코드에 대한 것인가"는 보지 않았기 때문이다. version-log가 배포 기록에
+  // 커밋 해시를 요구하는 것과 같은 이유로 여기서도 커밋을 요구한다.
+  if (Array.isArray(dirtyFiles)) {
+    if (dirtyFiles.length) {
+      const shown = dirtyFiles.slice(0, 5).map((s) => String(s).trim()).join(', ');
+      blockers.push({
+        code: BLOCKER.TREE_DIRTY,
+        message: `커밋되지 않은 변경이 ${dirtyFiles.length}건 있습니다 (${shown}`
+          + `${dirtyFiles.length > 5 ? ' 외' : ''}) — 커밋되지 않은 코드는 되돌릴 대상이 없습니다.`,
+      });
+    }
+  } else {
+    // git이 없는 환경에서 배포를 영영 막으면 게이트가 도구가 아니라 벽이 된다.
+    warnings.push('작업 트리 상태를 확인하지 못해 커밋 여부 검사를 건너뜁니다.');
   }
 
   // 매매 중 코드를 교체하면 그 거래가 어느 버전 것인지 알 수 없어져 롤백 판단이 오염된다.

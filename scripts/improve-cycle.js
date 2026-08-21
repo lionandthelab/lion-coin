@@ -135,11 +135,18 @@ async function main() {
   console.log('테스트 실행 중…');
   const tests = runTests();
   const baseline = readJson(BASELINE_PATH, null);
+  // 커밋되지 않은 코드는 되돌릴 대상이 없다. git이 없으면 null을 넘겨
+  // "모른다"로 두고, 게이트가 경고만 하게 한다.
+  let dirtyFiles = null;
+  try { dirtyFiles = git('status', '--porcelain').split('\n').filter((l) => l.trim()); }
+  catch { /* git이 없는 환경 */ }
+
   const gate = evaluateDeployGate({
     tests,
     baselineTests: baseline,
     openPosition: readJson(path.join(STATE_DIR, 'position.json'), null) != null,
     mode: readJson(path.join(STATE_DIR, 'mode.json'), { mode: 'stopped' }).mode,
+    dirtyFiles,
   });
   console.log(`  ${gate.reason}`);
   for (const b of gate.blockers) console.log(`  ✗ ${b.message}`);
