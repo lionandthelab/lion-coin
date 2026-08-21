@@ -68,6 +68,9 @@ function isFiniteNumber(v) {
   return typeof v === 'number' && Number.isFinite(v);
 }
 
+// 사람이 읽을 숫자. 정수면 소수점을 붙이지 않는다.
+const round1 = (v) => String(Math.round(v * 10) / 10);
+
 function assertPositive(value, name) {
   if (!isFiniteNumber(value) || value <= 0) {
     throw new RangeError(`${name}은(는) 양의 유한수여야 합니다: ${value}`);
@@ -89,26 +92,33 @@ function assessMarketContext({ btcChange24hBps, breadthPct } = {}) {
     return { ...UNKNOWN_CONTEXT };
   }
 
+  // 사유 문구는 대시보드와 텔레그램에 그대로 실린다. 시장폭은 종목 수로 나눈 값이라
+  // 거의 항상 무한소수여서, 그대로 넣으면 "시장폭 94.9579831932773%"가 찍힌다.
+  // 잠금화면에서 3초 안에 읽는 것이 이 알림의 목적인데 자릿수가 그걸 막는다.
+  // **판정에는 원본 값을 쓴다** — 반올림한 값으로 문턱을 비교하면 경계가 미세하게 옮겨간다.
+  const btcTxt = round1(btcChange24hBps);
+  const breadthTxt = round1(breadthPct);
+
   // 나쁜 쪽을 먼저 본다. risk_off는 OR 조건이라 "BTC만 오르고 알트는 죽은 장"을
   // 잡아낸다 — 재료가 가장 안 먹히는데 지표 하나만 보면 강세로 착각하기 쉬운 장이다.
   if (btcChange24hBps < RISK_OFF_BTC_BPS || breadthPct < RISK_OFF_BREADTH) {
     return {
       regime: 'risk_off',
       multiplier: MULTIPLIERS.risk_off,
-      reason: `BTC 24h ${btcChange24hBps}bps, 시장폭 ${breadthPct}% — 재료가 죽는 장이라 익절을 좁힙니다.`,
+      reason: `BTC 24h ${btcTxt}bps, 시장폭 ${breadthTxt}% — 재료가 죽는 장이라 익절을 좁힙니다.`,
     };
   }
   if (btcChange24hBps > RISK_ON_BTC_BPS && breadthPct > RISK_ON_BREADTH) {
     return {
       regime: 'risk_on',
       multiplier: MULTIPLIERS.risk_on,
-      reason: `BTC 24h ${btcChange24hBps}bps, 시장폭 ${breadthPct}% — 재료가 더 크게 먹히는 장입니다.`,
+      reason: `BTC 24h ${btcTxt}bps, 시장폭 ${breadthTxt}% — 재료가 더 크게 먹히는 장입니다.`,
     };
   }
   return {
     regime: 'neutral',
     multiplier: MULTIPLIERS.neutral,
-    reason: `BTC 24h ${btcChange24hBps}bps, 시장폭 ${breadthPct}% — 기대감 보정 없이 등급 기본값을 씁니다.`,
+    reason: `BTC 24h ${btcTxt}bps, 시장폭 ${breadthTxt}% — 기대감 보정 없이 등급 기본값을 씁니다.`,
   };
 }
 

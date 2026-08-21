@@ -65,6 +65,23 @@ test('assessMarketContext: risk_off 문턱도 축별로 고정된다 (OR 조건)
   assert.equal(assessMarketContext({ btcChange24hBps: 300, breadthPct: 39.9 }).regime, 'risk_off');
 });
 
+test('assessMarketContext: 사유 문구에 부동소수 잔여값을 흘리지 않는다', () => {
+  // 이 문자열은 대시보드와 텔레그램 알림에 그대로 실린다. 시장폭은 종목 수로
+  // 나눈 값이라 거의 항상 무한소수이고, 실제 화면에 "시장폭 94.9579831932773%"가
+  // 찍혔다. 잠금화면에서 3초 안에 읽는 것이 이 알림의 목적인데 자릿수가 그걸 막는다.
+  const r = assessMarketContext({ btcChange24hBps: 0.0713 * 10000, breadthPct: (452 / 476) * 100 });
+  assert.doesNotMatch(r.reason, /\d\.\d{3,}/, r.reason);
+  assert.match(r.reason, /713bps/, r.reason);
+  assert.match(r.reason, /시장폭 95%/, r.reason);   // 94.9579… → 95
+
+  // 소수 첫째 자리는 살린다. 문턱이 40/60이라 그 언저리에서는 자릿수가 뜻을 가진다.
+  const near = assessMarketContext({ btcChange24hBps: 10, breadthPct: (271 / 476) * 100 });
+  assert.match(near.reason, /시장폭 56\.9%/, near.reason);
+
+  // 정수는 소수점을 붙이지 않는다.
+  assert.match(assessMarketContext({ btcChange24hBps: 200, breadthPct: 50 }).reason, /시장폭 50%/);
+});
+
 test('assessMarketContext: 시황 데이터가 없으면 neutral로 위장하지 않고 null을 돌려준다', () => {
   const ctx = assessMarketContext({});
   assert.equal(ctx.regime, null);
