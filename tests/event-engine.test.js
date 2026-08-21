@@ -11,6 +11,7 @@ const {
   onFillConfirmed,
   onExitConfirmed,
   onExitFailed,
+  MAX_EXIT_RETRIES,
   halt,
 } = require('../src/event-engine');
 
@@ -485,6 +486,63 @@ test('onExitFailed: HALTED로 굳은 포지션은 수량을 든 채 침묵하지
   assert.equal(action.needsManualIntervention, true);
   assert.equal(action.quantity, 10);
   assert.equal(action.entryPrice, 100);
+});
+
+// ---- 재시도가 끝나지 않을 때 ----
+//
+// 재시도를 멈추면 안 된다 — 포지션은 반드시 나와야 하고, 멈추는 순간 고아가 된다.
+// 그러나 거래소가 계속 거절하면 무한히 조용히 돌기만 하는 것도 같은 결과다.
+// 그래서 **재시도는 영원히 계속하되, 몇 번 실패한 뒤에는 사람을 부른다.**
+
+test('onExitFailed: 반복 실패를 센다', () => {
+  let s = onPriceTick(holding(), { price: 98, now: T0 + 1000 }).state;
+  s = onExitFailed(s, { reason: '거래소 5xx', now: T0 + 1100 }).state;
+  assert.equal(s.exitFailCount, 1);
+  s = onPriceTick(s, { price: 98, now: T0 + 2000 }).state;
+  s = onExitFailed(s, { reason: '거래소 5xx', now: T0 + 2100 }).state;
+  assert.equal(s.exitFailCount, 2);
+});
+
+test('onExitFailed: 반복 실패가 상한을 넘으면 사람을 부르되 재시도는 계속한다', () => {
+  let s = holding();
+  let action = null;
+  for (let i = 0; i < MAX_EXIT_RETRIES; i += 1) {
+    s = onPriceTick(s, { price: 98, now: T0 + 1000 * (i + 1) }).state;
+    assert.equal(s.status, STATES.EXITING, `${i + 1}번째 재시도 지시가 나와야 한다`);
+    action = onExitFailed(s, { reason: '거래소 5xx', now: T0 + 1000 * (i + 1) + 50 }).action;
+    s = onExitFailed(s, { reason: '거래소 5xx', now: T0 + 1000 * (i + 1) + 50 }).state;
+  }
+  assert.equal(action.needsManualIntervention, true,
+    `${MAX_EXIT_RETRIES}번 연속 실패했는데 아무도 부르지 않는다`);
+  assert.equal(action.quantity, 10, '사람이 손으로 청산하려면 수량이 필요하다');
+  assert.equal(action.entryPrice, 100);
+  assert.equal(s.status, STATES.HOLDING, '재시도를 포기하면 포지션이 고아가 된다');
+  assert.equal(onPriceTick(s, { price: 98, now: T0 + 99_000 }).action.type, 'exit');
+});
+
+test('onExitFailed: 상한 전에는 사람을 부르지 않는다', () => {
+  // 일시적 5xx 한 번에 사람을 깨우면 그 알림은 곧 무시된다.
+  const exiting = onPriceTick(holding(), { price: 98, now: T0 + 1000 }).state;
+  const { action } = onExitFailed(exiting, { reason: '거래소 5xx', now: T0 + 1100 });
+  assert.notEqual(action.needsManualIntervention, true);
+});
+
+test('onExitConfirmed: 청산에 성공하면 실패 횟수를 지운다', () => {
+  // 지우지 않으면 다음 포지션이 앞선 실패를 물려받아 첫 실패에 사람을 부른다.
+  let s = onPriceTick(holding(), { price: 98, now: T0 + 1000 }).state;
+  s = onExitFailed(s, { reason: '거래소 5xx', now: T0 + 1100 }).state;
+  assert.equal(s.exitFailCount, 1);
+  s = onPriceTick(s, { price: 98, now: T0 + 2000 }).state;
+  s = onExitConfirmed(s, { price: 98, now: T0 + 2100 }).state;
+  assert.equal(s.exitFailCount, 0);
+});
+
+test('createEventState: 실패 횟수는 0에서 시작한다', () => {
+  assert.equal(createEventState().exitFailCount, 0);
+});
+
+test('MAX_EXIT_RETRIES: 일시적 오류를 흡수할 만큼은 크다', () => {
+  assert.ok(MAX_EXIT_RETRIES >= 2, `현재 ${MAX_EXIT_RETRIES}`);
 });
 
 test('onExitFailed: 청산을 내지도 않은 상태에서는 아무 일도 하지 않는다', () => {
