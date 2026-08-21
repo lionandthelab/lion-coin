@@ -13,7 +13,8 @@
 //      픽스처 30건 중 11건이 서로 다르고, 최대 19일 차이가 난다.
 //   2) 빗썸 published_at에는 타임존이 없다. 호스트 TZ에 맡기면 서울 노트북에서만 맞다.
 //   3) 블록미디어 RSS는 <pubDate>(오프셋 있음) 뒤에 <pubDate2>(KST, 오프셋 없음)를
-//      함께 싣는다. 태그 이름을 느슨하게 매칭하면 뒤엣것을 집는다.
+//      함께 싣는다. 태그 이름을 느슨하게 매칭하면 뒤엣것을 집는다. 두 값은 같은
+//      순간을 가리키지만, 느슨한 매칭은 닫는 태그까지 어긋나 시각을 통째로 잃는다.
 
 const crypto = require('node:crypto');
 
@@ -225,7 +226,9 @@ function unwrapCdata(s) {
 }
 
 // 태그 이름 뒤에 반드시 공백이나 '>'가 오도록 강제한다. 이 경계가 없으면
-// <pubDate>를 찾는 정규식이 <pubDate2>도 집어 9시간 어긋난 시각을 만든다.
+// <pubDate>를 찾는 정규식이 <pubDate2>를 여는 태그로 집는다. 닫는 태그는
+// </pubDate2>에 맞지 않아 다음 </pubDate>까지 끌려가고, 결국 태그가 뒤섞인
+// 쓰레기 문자열을 파싱해 at: null이 된다 — 시각이 어긋나는 게 아니라 통째로 사라진다.
 function tagText(block, name) {
   const re = new RegExp(`<${name}(?:\\s[^>]*)?>([\\s\\S]*?)<\\/${name}\\s*>`, 'i');
   const m = block.match(re);
