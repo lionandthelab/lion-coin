@@ -638,6 +638,34 @@ const server = http.createServer(async (req, res) => {
   json(res, 404, { error: 'not found' });
 });
 
+// **이음매를 테스트가 볼 수 있게 연다.**
+// 이 파일의 결함은 전부 모듈 사이의 이음매에서 나왔다 — 상태 기계에 청산 경로가
+// 있는데 데몬이 안 부르고, 분별기가 필드를 내주는데 데몬이 안 읽는 식이다.
+// 단위 테스트는 이런 것을 원리적으로 못 잡는다. 그래서 네트워크 경계만 갈아끼우고
+// 실제 함수를 그대로 돌릴 수 있도록 내보낸다.
+//
+// 서버는 직접 실행할 때만 연다. require로 불러오면 포트를 잡지 않는다.
+module.exports = {
+  pollOnce,
+  priceTick,
+  trackPostExits,
+  persistDay,
+  positionView,
+  setMode: (m) => { mode = m; },
+  getMode: () => mode,
+  getState: () => state,
+  setState: (s) => { state = s; },
+  getTrades: () => trades,
+  getEvents: () => events,
+  getErrors: () => errors,
+  getPostExits: () => postExits,
+  setPrimed: (v) => { primed = v; },
+  setMarketContext: (ctx, at) => { marketContext = ctx; marketContextAt = at; },
+  config,
+};
+
+if (require.main !== module) return;
+
 server.listen(PORT, () => {
   console.log(`유목민식 이벤트 단타: http://localhost:${PORT}`);
   console.log(`  모드: stopped (시작 버튼은 감시로만 진입)`);
