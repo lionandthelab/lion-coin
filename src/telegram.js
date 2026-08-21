@@ -210,7 +210,13 @@ function planBpsPair(plan, entryPrice) {
   return { tp, sl };
 }
 
-function formatEntryAlert({ symbol, plan, event, material } = {}) {
+// 모의 매매 표시. 종류 표식(첫 글자)은 그대로 두고 첫 줄 끝에 붙인다 —
+// 모의와 실거래 알림이 똑같이 생기면 종이 체결을 실제 체결로 읽거나 그 반대가 된다.
+// 기본값은 "표시 없음 = 실거래"다. 플래그를 안 넘긴 쪽이 실거래로 보이는 편이,
+// 실제로 돈이 나가는 중인데 모의로 보이는 것보다 덜 위험하다.
+const simulatedSuffix = (simulated) => (simulated === true ? ' · 🧪모의' : '');
+
+function formatEntryAlert({ symbol, plan, event, material, simulated } = {}) {
   const p = plan && typeof plan === 'object' ? plan : null;
   if (!p || typeof p.entryPrice !== 'number' || !Number.isFinite(p.entryPrice) || p.entryPrice <= 0) {
     throw new TypeError('진입 알림에는 양수 plan.entryPrice가 필요합니다');
@@ -224,7 +230,7 @@ function formatEntryAlert({ symbol, plan, event, material } = {}) {
         ? p.quantity * p.entryPrice
         : null;
 
-  const lines = [`${MARKERS.entry} 진입${sym ? ` ${sym}` : ''}`];
+  const lines = [`${MARKERS.entry} 진입${sym ? ` ${sym}` : ''}${simulatedSuffix(simulated)}`];
 
   // 얼마를 걸었는지가 먼저다 — 가격보다 금액이 위험의 크기다.
   const money = formatKrw(notional);
@@ -249,7 +255,7 @@ function formatEntryAlert({ symbol, plan, event, material } = {}) {
   return lines.join('\n');
 }
 
-function formatExitAlert({ symbol, outcome, returnBps, holdSec, pnlKrw } = {}) {
+function formatExitAlert({ symbol, outcome, returnBps, holdSec, pnlKrw, simulated } = {}) {
   const bps = typeof returnBps === 'number' && Number.isFinite(returnBps) ? returnBps : null;
   const pnl = typeof pnlKrw === 'number' && Number.isFinite(pnlKrw) ? pnlKrw : null;
 
@@ -262,7 +268,7 @@ function formatExitAlert({ symbol, outcome, returnBps, holdSec, pnlKrw } = {}) {
   if (bps !== null) head.push(formatBps(bps));
   if (pnl !== null) head.push(`(${formatSignedKrw(pnl)})`);
 
-  const lines = [head.join(' ')];
+  const lines = [`${head.join(' ')}${simulatedSuffix(simulated)}`];
 
   // 아는 사유는 다듬어 보여주고, 모르는 값은 지어내지 않고 그대로 보여준다.
   const key = typeof outcome === 'string' ? outcome.trim() : '';
