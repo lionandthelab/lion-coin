@@ -30,6 +30,7 @@ const eventPlan = require('../src/event-plan');
 const fsm = require('../src/event-engine');
 const telegram = require('../src/telegram');
 const gate = require('../src/trade-gate');
+const snapshot = require('../src/market-snapshot');
 const writer = require('../src/review-writer');
 const { summarizeDay, proposeCalibration, postExitKey } = require('../src/daily-review');
 
@@ -61,7 +62,10 @@ const errors = [];
 const srcHealth = new Map();
 let knownSymbols = [];
 let lastSymbolFetch = 0;
-let marketContext = { regime: 'neutral', multiplier: 1, reason: '아직 평가 전' };
+// 평가 전에는 neutral로 위장하지 않는다. 켜자마자 들어온 재료가 "시황 중립"으로
+// 계획되면, 시황을 보겠다고 만든 층이 정확히 가장 급한 순간에 없는 것과 같다.
+let marketContext = { regime: null, multiplier: null, reason: '아직 평가 전' };
+let marketContextAt = null;
 let tgLastSentAt = null;
 
 // **청산 후에도 가격을 계속 추적한다 — 이게 복기의 재료다.**
@@ -127,14 +131,14 @@ async function refreshSymbols() {
 async function refreshMarketContext() {
   try {
     const t = await bithumb.fetchTickerAll();
-    const btc = t.find((m) => m.symbol === 'BTC');
-    const ups = t.filter((m) => typeof m.changeRate === 'number' && m.changeRate > 0).length;
-    marketContext = eventPlan.assessMarketContext({
-      btcChange24hBps: btc && typeof btc.changeRate === 'number' ? btc.changeRate * 10000 : 0,
-      breadthPct: t.length ? (ups / t.length) * 100 : 50,
-    });
+    // 모르는 값을 0·50으로 채우지 않는다. 그 두 값은 완벽하게 중립이라 어떤
+    // 가드에도 걸리지 않고, 시황을 한 번도 못 읽어도 계획이 만들어진다.
+    marketContext = eventPlan.assessMarketContext(snapshot.marketInputsFromTickers(t));
+    marketContextAt = marketContext.regime ? Date.now() : null;
   } catch (err) {
     recordError(`시황 평가 실패: ${err.message}`);
+    // 마지막 값을 그대로 두되 시각은 갱신하지 않는다 — 나이가 쌓이면
+    // isContextUsable이 스스로 만료시킨다.
   }
 }
 
@@ -238,6 +242,14 @@ async function tryEnter(row, m) {
   // 비어 있으면 시장가가 어디에 체결될지 알 수 없다.
   if (spreadBps > config.maxSpreadBps) {
     row.reason = `스프레드 ${spreadBps.toFixed(0)}bps > 상한 ${config.maxSpreadBps}bps`;
+    return;
+  }
+
+  // 오래된 시황으로 계획을 세우지 않는다. 조회가 계속 실패하면 마지막 값이
+  // 조용히 계속 쓰이는데, 한 시간 전 국면으로 지금 재료의 크기를 조절하는 것은
+  // 모르는 것보다 나쁘다 — 모르면 적어도 멈춘다.
+  if (!snapshot.isContextUsable(marketContext, { at: marketContextAt, now: Date.now() })) {
+    row.reason = `시황을 판정하지 못했습니다 — ${marketContext.reason || '평가 전'}`;
     return;
   }
 
@@ -500,7 +512,13 @@ const server = http.createServer(async (req, res) => {
       position: positionView(),
       events: events.slice(0, 60),
       sources: [...srcHealth.values()],
-      marketContext,
+      // 화면이 시황의 나이를 볼 수 있어야 한다. "neutral"만 보이면 방금 읽은
+      // 것인지 한 시간 전 것인지 구별되지 않는다.
+      marketContext: {
+        ...marketContext,
+        at: marketContextAt,
+        usable: snapshot.isContextUsable(marketContext, { at: marketContextAt, now: Date.now() }),
+      },
       today: todayStats(),
       trades: trades.slice(0, 40),
       // 설정만 노출한다. 키·토큰은 여기 없다.
