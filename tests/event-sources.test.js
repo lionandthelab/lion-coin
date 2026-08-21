@@ -437,3 +437,166 @@ test('filterFreshEvents: maxAgeMs가 양수가 아니면 거부한다', () => {
   assert.throws(() => filterFreshEvents([], { maxAgeMs: 0, now: 1 }), /maxAgeMs/);
   assert.throws(() => filterFreshEvents([], { maxAgeMs: -1, now: 1 }), /maxAgeMs/);
 });
+
+// ---- 적대적 검증에서 실제로 재현된 결함들 ----
+//
+// 아래 테스트는 전부 "실행해서 깨지는 것을 본" 입력이다. 가정이 아니라 재현이다.
+
+test('parseRss: 범위를 벗어난 숫자 문자참조가 배치 전체를 죽이지 않는다', () => {
+  // String.fromCodePoint(1114112)는 RangeError를 던진다. 제목 하나가 깨졌다고
+  // 예외가 map 밖으로 올라가면 그 폴링에서 받은 기사 10건이 통째로 사라진다 —
+  // "항목을 버리지 않는다"는 이 모듈의 불변식과 정반대다. 감시가 조용히 멈춘다.
+  const xml = blockmediaXml().replace(
+    '<title>[뉴욕 코인시황/마감]',
+    '<title>[뉴욕 &#1114112; 코인시황/마감]'
+  );
+  const events = parseRss(xml, 'blockmedia');
+  assert.equal(events.length, 10, '기사 10건이 모두 살아 있어야 한다');
+  // 해석할 수 없는 참조는 지어내지 말고 원문 그대로 남긴다.
+  assert.ok(events[0].title.includes('&#1114112;'));
+  // 같은 항목의 나머지 필드는 정상적으로 파싱되어야 한다.
+  assert.equal(events[0].at, Date.parse('2026-08-21T21:12:12Z'));
+
+  // 16진 표기도 같은 경로다.
+  const hex = parseRss(
+    '<rss><channel><item><title>bad &#xFFFFFFF; t</title></item></channel></rss>',
+    'tokenpost'
+  );
+  assert.equal(hex.length, 1);
+  assert.equal(hex[0].title, 'bad &#xFFFFFFF; t');
+
+  // 서로게이트 코드포인트는 던지지는 않지만 홀로 남으면 문자열이 깨진다. 원문 유지.
+  const surrogate = parseRss(
+    '<rss><channel><item><title>a &#xD800; b</title></item></channel></rss>',
+    'tokenpost'
+  );
+  assert.equal(surrogate[0].title, 'a &#xD800; b');
+
+  // 정상 범위의 참조는 지금처럼 디코딩되어야 한다 (과잉 방어로 기능을 죽이지 않았는지).
+  const ok = parseRss(
+    '<rss><channel><item><title>&#48708;&#xD2B8;코인</title></item></channel></rss>',
+    'tokenpost'
+  );
+  assert.equal(ok[0].title, '비트코인');
+});
+
+test('parseRss: pubDate2가 pubDate보다 앞에 와도 pubDate를 집는다', () => {
+  // 기존 pubDate2 테스트는 <pubDate2>만 있는 입력을 썼다. 그 입력은 느슨한 정규식으로도
+  // 닫는 태그 </pubDate>를 못 찾아 null이 나오므로, 여는 태그 경계를 전혀 검증하지
+  // 못했다(변이 생존). 순서를 뒤집어야 경계가 실제로 갈린다:
+  // 느슨한 <pubDate[^>]*>는 <pubDate2>를 집어 KST 값을 읽고 9시간 어긋난다.
+  const xml = `<rss><channel><item>
+    <title>pubDate2가 먼저 오는 기사</title>
+    <link>https://x.test/1</link>
+    <pubDate2>2026-08-22 06:12:12</pubDate2>
+    <pubDate>Fri, 21 Aug 2026 21:12:12 +0000</pubDate>
+  </item></channel></rss>`;
+  // 느슨한 정규식은 <pubDate2>를 여는 태그로 집은 뒤 닫는 태그를 </pubDate>까지
+  // 끌고 가, 태그가 섞인 쓰레기 문자열을 파싱해 at:null을 낸다. 값이 정확히
+  // pubDate의 시각이라는 것 자체가 여는 태그 경계가 지켜졌다는 증거다.
+  const [e] = parseRss(xml, 'blockmedia');
+  assert.equal(e.at, Date.parse('2026-08-21T21:12:12Z'));
+  assert.notEqual(e.at, null, '여는 태그 경계가 없으면 시각을 통째로 잃는다');
+});
+
+test('parseRss: pubDate의 GMT/UTC 문자 표기도 시각으로 읽는다', () => {
+  // RFC-822는 숫자 오프셋 대신 GMT/UTC 같은 문자 표기도 허용한다. 이것을 못 읽으면
+  // 그 피드는 전 항목이 at:null이 되고, filterFreshEvents가 전부 stale로 버린다 —
+  // 소스 하나가 조용히 통째로 사라진다.
+  const mk = (d) => `<rss><channel><item><title>t</title><pubDate>${d}</pubDate></item></channel></rss>`;
+  assert.equal(
+    parseRss(mk('Fri, 21 Aug 2026 21:12:12 GMT'), 'tokenpost')[0].at,
+    Date.parse('2026-08-21T21:12:12Z')
+  );
+  assert.equal(
+    parseRss(mk('Fri, 21 Aug 2026 21:12:12 UTC'), 'tokenpost')[0].at,
+    Date.parse('2026-08-21T21:12:12Z')
+  );
+  // 오프셋 표기가 아예 없는 RFC-822는 여전히 null이어야 한다. 호스트 TZ로 읽으면
+  // 서울 노트북과 UTC 서버가 9시간 다른 값을 낸다 — 이 모듈이 가장 피하려는 실패다.
+  assert.equal(parseRss(mk('Fri, 21 Aug 2026 21:12:12'), 'tokenpost')[0].at, null);
+  // 뜻을 모르는 표기를 임의로 KST라고 단정하지 않는다.
+  assert.equal(parseRss(mk('Fri, 21 Aug 2026 21:12:12 XYZ'), 'tokenpost')[0].at, null);
+});
+
+test('dedupeNewEvents: 배치가 maxSeen보다 커도 최신 공지부터 버리지 않는다', () => {
+  // 업비트는 공지를 최신순으로 준다. 그래서 배치 안의 삽입 순서는 최신 → 오래된 것이고,
+  // "앞쪽부터 버린다"는 절삭은 정확히 최신 공지를 먼저 지운다. 지워진 최신 공지는
+  // 다음 폴링에서 새 재료로 되살아나 이미 반영된 자리에서 진입하게 만든다.
+  const mk = (i) => ({ id: `upbit:${i}`, source: 'upbit', at: i, title: `t${i}`, category: null, url: null, updatedAt: null });
+  const newestFirst = (from, count) => Array.from({ length: count }, (_, k) => mk(from - k));
+
+  const poll1 = dedupeNewEvents(newestFirst(6525, 30), new Set(), { maxSeen: 10 });
+  assert.equal(poll1.fresh.length, 30);
+  // 한 폴링분을 담지도 못하는 상한이면 중복 제거가 구조적으로 무력해진다.
+  // 최소한 이번 배치는 전부 기억해야 한다.
+  assert.equal(poll1.seenIds.size, 30);
+
+  // 같은 응답의 상위 20건을 다시 받는다 — 하나도 새롭지 않아야 한다.
+  const poll2 = dedupeNewEvents(newestFirst(6525, 20), poll1.seenIds, { maxSeen: 10 });
+  assert.deepEqual(poll2.fresh.map((e) => e.id), [], '방금 본 최신 공지가 새 재료로 되살아나면 안 된다');
+
+  // 절삭 후에도 남는 것은 가장 최신 id들이어야 한다.
+  assert.deepEqual(
+    [...poll2.seenIds].sort(),
+    newestFirst(6525, 10).map((e) => e.id).sort()
+  );
+});
+
+test('parseUpbitNotices: id가 없는 공지들이 upbit:undefined 하나로 뭉치지 않는다', () => {
+  // `upbit:${undefined}`는 'upbit:undefined'라는 비어 있지 않은 문자열이라
+  // dedupeNewEvents의 id 검사를 통과한다. 파서에서는 "출력 길이 = 입력 개수"가
+  // 지켜지지만 중복 제거 단계에서 서로 다른 공지가 조용히 하나로 합쳐진다.
+  const events = parseUpbitNotices({
+    success: true,
+    data: {
+      notices: [
+        { title: 'id 없는 공지 A', first_listed_at: '2026-08-21T19:00:00+09:00' },
+        { title: 'id 없는 공지 B', first_listed_at: '2026-08-21T19:05:00+09:00' },
+      ],
+    },
+  });
+  assert.equal(events.length, 2);
+  for (const e of events) {
+    assert.ok(!e.id.includes('undefined'), `id에 undefined가 들어가면 안 된다: ${e.id}`);
+    assert.equal(e.id.split(':')[0], 'upbit');
+  }
+  assert.notEqual(events[0].id, events[1].id);
+  assert.equal(dedupeNewEvents(events, new Set()).fresh.length, 2);
+
+  // 폴링마다 같은 id가 나와야 중복 제거가 동작한다.
+  const again = parseUpbitNotices({
+    success: true,
+    data: { notices: [{ title: 'id 없는 공지 A', first_listed_at: '2026-08-21T19:00:00+09:00' }] },
+  });
+  assert.equal(again[0].id, events[0].id);
+});
+
+test('parseBithumbNotices: pc_url의 쿼리·프래그먼트가 붙어도 같은 id다', () => {
+  // 같은 공지의 URL에 utm 파라미터나 앵커만 붙어도 숫자 id 추출이 실패해
+  // 해시 id로 떨어지고, 그러면 이미 본 공지가 새 재료로 되살아난다.
+  const base = { categories: ['공시'], title: '재산상 이익 제공 공시', published_at: '2026-08-21 19:00:00' };
+  const idOf = (pc_url) => parseBithumbNotices([{ ...base, pc_url }])[0].id;
+  assert.equal(idOf('https://feed.bithumb.com/notice/1654573'), 'bithumb:1654573');
+  assert.equal(idOf('https://feed.bithumb.com/notice/1654573?utm_source=x'), 'bithumb:1654573');
+  assert.equal(idOf('https://feed.bithumb.com/notice/1654573#top'), 'bithumb:1654573');
+  assert.equal(idOf('https://feed.bithumb.com/notice/1654573/'), 'bithumb:1654573');
+  // 서로 다른 공지는 여전히 갈려야 한다.
+  assert.notEqual(idOf('https://feed.bithumb.com/notice/1654571'), 'bithumb:1654573');
+});
+
+test('parseBithumbNotices: 단서가 부족한 항목들이 한 id로 뭉치지 않는다', () => {
+  // pc_url도 제목도 발행시각도 없으면 shortHash('','')로 전부 같은 해시가 나온다.
+  // 서로 다른 공지 두 건이 중복 제거에서 한 건으로 사라진다.
+  const events = parseBithumbNotices([
+    { categories: ['공시'], modified_at: '2026-08-21 18:07:17' },
+    { categories: ['입출금'], modified_at: '2026-08-21 16:31:55' },
+  ]);
+  assert.equal(events.length, 2);
+  assert.notEqual(events[0].id, events[1].id);
+  assert.equal(dedupeNewEvents(events, new Set()).fresh.length, 2);
+
+  // 그래도 id는 폴링 간 안정적이어야 한다.
+  const again = parseBithumbNotices([{ categories: ['공시'], modified_at: '2026-08-21 18:07:17' }]);
+  assert.equal(again[0].id, events[0].id);
+});
