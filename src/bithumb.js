@@ -84,6 +84,12 @@ function assertOk(json) {
 
 // 전체 KRW 마켓을 24시간 거래대금 내림차순으로 돌려준다.
 // 거래대금은 유동성 대리 지표이며, 하위 종목은 스프레드가 훨씬 넓어 비용이 커진다.
+function percentToRate(v) {
+  if (v === null || v === undefined || v === '') return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n / 100 : null;
+}
+
 function parseTickerAll(json) {
   const data = assertOk(json);
   return Object.entries(data)
@@ -92,6 +98,10 @@ function parseTickerAll(json) {
       symbol,
       price: Number(v.closing_price),
       tradeValue24h: Number(v.acc_trade_value_24H || 0),
+      // 응답은 퍼센트("6.96")다. 소수 비율로 바꿔 둬야 소비자가 ×10000으로
+      // bps를 얻는다. 못 읽으면 null — 0으로 채우면 "변동 없음"이라는 확정된
+      // 관측으로 읽혀 시장폭 계산에서 하락으로 세어진다.
+      changeRate: percentToRate(v.fluctate_rate_24H),
     }))
     .sort((a, b) => b.tradeValue24h - a.tradeValue24h);
 }
