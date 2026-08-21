@@ -13,7 +13,9 @@
     "research": "node scripts/research.js",
     "collect-positioning": "node scripts/collect-positioning.js",
     "dashboard": "node --env-file-if-exists=.env scripts/trade-dashboard.js",
-    "event": "node --env-file-if-exists=.env scripts/event-trader.js"
+    "event": "node --env-file-if-exists=.env scripts/event-trader.js",
+    "improve": "node --env-file-if-exists=.env scripts/improve-cycle.js",
+    "review": "node --env-file-if-exists=.env scripts/improve-cycle.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.117.1",
