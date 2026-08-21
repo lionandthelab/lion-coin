@@ -299,6 +299,18 @@ test('planEventTrade: 배수가 상한을 넘으면 매매하지 않는다 (익�
   assert.match(p.reason, /배수/);
 });
 
+test('planEventTrade: 숫자가 아닌 배수는 비교 연산에 조용히 실려 가지 않는다', () => {
+  // 범위 비교만으로는 못 잡는 값들이다. NaN·undefined는 어느 부등호도 참이 아니라
+  // 그대로 통과해 익절이 NaN이 되고, 문자열 '1.3'과 true는 비교에서 숫자로
+  // 강제 변환돼 "정상 계획"처럼 통과한다 — 시황 판정이 손상된 사실이 묻힌다.
+  for (const multiplier of [NaN, undefined, '1.3', true]) {
+    const p = planEventTrade({ ...base, marketContext: { regime: 'neutral', multiplier }, grade: 'A', direction: 'bullish' });
+    assert.equal(p.executable, false, `배수 ${String(multiplier)}`);
+    assert.equal(p.takeProfitBps, null);
+    assert.match(p.reason, /배수/);
+  }
+});
+
 test('planEventTrade: 배수가 하한 미만이면 던지지 않고 매매하지 않는다', () => {
   // 이 모듈의 원칙은 "매매 불가는 던지지 않고 noTrade로 돌려준다"다. 던지면
   // 호출자가 넘긴 적도 없는 내부 파라미터명(takeProfitBps)이 에러로 새어 나온다.
@@ -349,6 +361,24 @@ test('planEventTrade: 프로토타입 속성 이름은 등급이 아니다', () 
   }
 });
 
+test('planEventTrade: 프로토타입이 오염돼도 등급표는 자기 속성만 본다', () => {
+  // 프로토타입 오염은 JSON 병합 한 번으로 들어온다. 표를 in으로 조회하면 오염된
+  // 이름이 그대로 "아는 등급"이 되어, 익절 9,999bps짜리 남의 플레이북으로 주문이 나간다.
+  Object.defineProperty(Object.prototype, 'Z', {
+    value: { takeProfitBps: 9999, stopLossBps: 1, maxHoldSec: 60 },
+    configurable: true,
+    enumerable: false,
+  });
+  try {
+    const p = planEventTrade({ ...base, grade: 'Z', direction: 'bullish' });
+    assert.equal(p.executable, false);
+    assert.equal(p.takeProfitBps, null);
+    assert.match(p.reason, /등급/);
+  } finally {
+    delete Object.prototype.Z;
+  }
+});
+
 // ---- planEventTrade: 비용 ----
 
 test('planEventTrade: 비용은 편도 수수료의 왕복(×2)으로 계산된다', () => {
@@ -378,7 +408,8 @@ test('planEventTrade: 수수료를 명시하지 않으면 무비용으로 가정
   const { feeBps, ...noFee } = base;
   assert.throws(
     () => planEventTrade({ ...noFee, grade: 'B', direction: 'bullish' }),
-    /feeBps/
+    /feeBps.*명시/s,
+    '"잘못된 숫자"가 아니라 "비용을 적어야 한다"고 말해야 한다'
   );
 });
 
@@ -447,7 +478,20 @@ test('planEventTrade: 자본 한도에 걸린 계획에는 위험 비중을 올�
   assert.equal(p.cappedByCapital, true);
   assert.doesNotMatch(p.reason, /위험 비중을 올리/, '틀린 손잡이를 돌리게 만드는 조언이다');
   assert.doesNotMatch(p.reason, /위험 비중을 [\d.]+% 이상으로 올리/);
-  assert.match(p.reason, /자본/);
+  assert.match(p.reason, /자본 한도/, '왜 비중이 소용없는지까지 적어야 같은 사고가 반복되지 않는다');
+});
+
+test('planEventTrade: 비중을 올리면 될 것처럼 보이지만 자본 한도에 걸린 경우도 구분한다', () => {
+  // 자본 4,000원 × 3% = 위험 120원 → S급 손절 200bps → 60주 = 명목 6,000원인데
+  // 자본 한도에 4,000원으로 잘린다. 산술만 보면 "비중을 3.75%로 올리면 5,000원"이지만
+  // 실제로는 명목이 자본에 묶여 있어 비중을 아무리 올려도 4,000원 그대로다.
+  const p = planEventTrade({
+    ...base, capital: 4000, riskPct: 3, grade: 'S', direction: 'bullish',
+  });
+  assert.equal(p.cappedByCapital, true);
+  assert.equal(p.executable, false);
+  assert.doesNotMatch(p.reason, /3\.75%/, '자본 한도를 무시한 역산은 틀린 조언이다');
+  assert.match(p.reason, /자본 한도/);
 });
 
 test('planEventTrade: 위험 비중 상한으로도 못 넘으면 필요한 자본을 알려준다', () => {
