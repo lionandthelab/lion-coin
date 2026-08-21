@@ -613,8 +613,22 @@ test('sendMessage: 성공하면 텔레그램 result를 돌려준다', async () =
   assert.deepEqual(res, { message_id: 42 });
 });
 
+// 이 두 테스트의 스텁 본문이 무해하면 "오류 본문을 message에 붙이는" 변이를 못 잡는다.
+// **실제 위협은 텔레그램이 아니라 앞단 프록시(게이트웨이·WAF·사내 아웃바운드 프록시)다.**
+// 그런 중계기는 오류 본문에 요청 URL을 그대로 되돌려주는데, 텔레그램 URL은 경로에
+// 봇 토큰이 박혀 있다(/bot<토큰>/sendMessage). 본문을 message에 붙이는 순간 토큰이
+// 로그·알림·에러 리포터로 통째로 흘러나가고, 그 토큰이면 누구든 봇을 조종할 수 있다.
+// 그래서 스텁 본문에 위협 그대로 토큰이 든 URL을 심어 둔다.
+const leakyProxyBody = (errorCode, extra = {}) => ({
+  ok: false,
+  error_code: errorCode,
+  description:
+    `Bad Gateway: upstream request https://api.telegram.org/bot${FAKE_TOKEN}/sendMessage failed`,
+  ...extra,
+});
+
 test('sendMessage: HTTP 오류 메시지에 토큰도 URL도 들어가지 않는다', async () => {
-  const impl = stubFetch(() => ({ ok: false, status: 400, json: async () => ({ ok: false, error_code: 400 }) }));
+  const impl = stubFetch(() => ({ ok: false, status: 400, json: async () => leakyProxyBody(400) }));
   await assert.rejects(
     () => sendMessage({ token: FAKE_TOKEN, chatId: 1, text: 'hi', fetchImpl: impl }),
     (err) => {
@@ -634,12 +648,7 @@ test('sendMessage: 429면 retry_after를 에러에 실어 준다', async () => {
   const impl = stubFetch(() => ({
     ok: false,
     status: 429,
-    json: async () => ({
-      ok: false,
-      error_code: 429,
-      description: 'Too Many Requests: retry after 17',
-      parameters: { retry_after: 17 },
-    }),
+    json: async () => leakyProxyBody(429, { parameters: { retry_after: 17 } }),
   }));
   await assert.rejects(
     () => sendMessage({ token: FAKE_TOKEN, chatId: 1, text: 'hi', fetchImpl: impl }),
