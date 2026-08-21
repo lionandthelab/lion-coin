@@ -293,12 +293,15 @@ function dedupeNewEvents(events, seenIds, { maxSeen = DEFAULT_MAX_SEEN } = {}) {
   const seen = new Set(seenIds || []);
   const fresh = [];
   const added = [];
+  // 이번 폴링에서 본 id 전체(이미 알던 것 포함). 상한의 하한을 정하는 데 쓴다.
+  const batch = new Set();
 
   for (const e of events) {
     if (!e || typeof e.id !== 'string' || e.id === '') {
       // id 없는 항목을 그냥 흘려보내면 매 폴링마다 같은 재료가 새 것으로 되살아난다.
       throw new TypeError(`이벤트에 id가 없습니다: ${JSON.stringify(e)}`);
     }
+    batch.add(e.id);
     if (seen.has(e.id)) continue;
     seen.add(e.id);
     fresh.push(e);
@@ -318,7 +321,13 @@ function dedupeNewEvents(events, seenIds, { maxSeen = DEFAULT_MAX_SEEN } = {}) {
   // 상한은 폴링이 쌓이며 Set이 무한히 커지는 것을 막기 위한 것이지, 이번에 본 것을
   // 잊기 위한 것이 아니다. 한 배치보다 작은 상한을 그대로 적용하면 방금 본 공지를
   // 즉시 잊어 중복 제거가 구조적으로 무력해진다. 이번 배치는 최소한 전부 기억한다.
-  const cap = Number.isFinite(maxSeen) && maxSeen > 0 ? Math.max(maxSeen, added.length) : null;
+  //
+  // 하한은 added.length가 아니라 **배치 전체**여야 한다. added는 이번에 새로 추가된
+  // 것만 세므로, 하한이 항목이 추가된 폴링에서만 걸린다. 바로 다음 폴링은 새 항목이
+  // 없어 added=0이 되고 상한이 원래 값으로 되돌아가, 방금 기억하기로 한 것을 즉시
+  // 잊는다 — 그리고 그 다음 폴링에서 잊은 것이 새 재료로 되살아난다.
+  // (maxSeen 10에 30건 배치를 5회 폴링하면 30·0·20·10·20으로 재발화했다.)
+  const cap = Number.isFinite(maxSeen) && maxSeen > 0 ? Math.max(maxSeen, batch.size) : null;
   if (cap !== null && seen.size > cap) {
     return { fresh, seenIds: new Set([...seen].slice(seen.size - cap)) };
   }
