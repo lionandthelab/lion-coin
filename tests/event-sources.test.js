@@ -480,6 +480,44 @@ test('parseRss: 범위를 벗어난 숫자 문자참조가 배치 전체를 죽�
   assert.equal(ok[0].title, '비트코인');
 });
 
+test('parseRss: 문자참조는 한 번만 푼다 (이중 인코딩을 끝까지 벗기지 않는다)', () => {
+  // src가 주석으로 선언한 불변식인데 고정한 테스트가 없어, 디코드를 두 번 돌려도 초록이었다.
+  //
+  // 원문에 **문자 그대로** "&amp;"가 적힌 기사가 있다(HTML 이야기를 하는 기사 등).
+  // RSS는 그것을 "&amp;amp;"로 실어 보내므로, 한 번 풀면 "&amp;"라는 원문이 복원된다.
+  // 끝까지 벗기면 "&"가 되어 제목이 원문과 달라진다 — 우리가 저장하고 알림으로 쏘는
+  // 제목이 실제 기사 제목이 아니게 된다.
+  const doubled = parseRss(
+    '<rss><channel><item><title>A&amp;amp;B</title></item></channel></rss>',
+    'tokenpost'
+  );
+  assert.equal(doubled[0].title, 'A&amp;B', '한 번만 풀어야 원문이 그대로 복원된다');
+
+  // 더 나쁜 쪽. 이중 인코딩을 끝까지 벗기면 **이스케이프된 텍스트가 실제 마크업으로
+  // 되살아난다.** "&amp;lt;" 는 원문에서 "&lt;"라는 글자였는데, 두 번 풀면 "<"가 된다.
+  const escaped = parseRss(
+    '<rss><channel><item><title>x &amp;lt;script&amp;gt; y</title></item></channel></rss>',
+    'tokenpost'
+  );
+  assert.equal(escaped[0].title, 'x &lt;script&gt; y');
+  assert.ok(!escaped[0].title.includes('<script>'), '두 번 풀어 마크업이 되살아났다');
+});
+
+test('parseRss: &#0;은 NUL을 주입하지 않고 원문으로 남는다', () => {
+  // cp <= 0 검사를 지워도 초록이었다. String.fromCodePoint(0)은 던지지 않고
+  // **NUL 문자를 만들어낸다** — 예외가 아니라 조용한 오염이라 더 나쁘다.
+  // NUL이 박힌 제목은 눈으로는 멀쩡해 보이는데 로그·JSON·알림을 타고 흘러가고,
+  // C 기반 소비자에서는 그 지점에서 문자열이 잘린다.
+  for (const ref of ['&#0;', '&#x0;', '&#00;']) {
+    const events = parseRss(
+      `<rss><channel><item><title>a${ref}b</title></item></channel></rss>`,
+      'tokenpost'
+    );
+    assert.equal(events[0].title, `a${ref}b`, `${ref} 는 해석하지 말고 원문을 남겨야 한다`);
+    assert.ok(!events[0].title.includes('\0'), `${ref} 로 NUL이 주입됐다`);
+  }
+});
+
 test('parseRss: pubDate2가 pubDate보다 앞에 와도 pubDate를 집는다', () => {
   // 기존 pubDate2 테스트는 <pubDate2>만 있는 입력을 썼다. 그 입력은 느슨한 정규식으로도
   // 닫는 태그 </pubDate>를 못 찾아 null이 나오므로, 여는 태그 경계를 전혀 검증하지
