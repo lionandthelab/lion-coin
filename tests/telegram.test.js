@@ -747,6 +747,50 @@ test('sendMessage: 4096자를 넘는 텍스트를 잘라서 보낸다', async ()
   assert.match(body.text, /잘림/);
 });
 
+test('sendMessage: 자르는 자리가 이모지 한가운데여도 깨진 문자를 남기지 않는다', async () => {
+  // 위 테스트는 '가'만 5000자라 절단면이 절대 서로게이트 쌍에 걸리지 않는다.
+  // 그런데 이 알림의 첫 글자부터가 이모지고(🔥/🚨), 본문에도 이모지가 섞인다.
+  // 자바스크립트 문자열 길이는 UTF-16 코드 단위라, slice가 이모지(서로게이트 쌍)
+  // 한가운데를 자르면 짝 없는 반쪽이 남는다. 그 반쪽은 UTF-8로 직렬화될 때
+  // U+FFFD로 뭉개지고, 텔레그램은 잘못된 UTF-8에 400을 돌려줘 알림이 통째로 사라진다.
+  // 4096자 제한을 지키려다 알림을 잃는 셈이다.
+
+  // 접미사 '…(잘림)'이 5자이므로 절단 인덱스는 4091이다. 이모지를 정확히 4090에 두면
+  // 절단면이 쌍의 한가운데를 지난다.
+  const CUT = 4096 - '…(잘림)'.length;
+  const text = '가'.repeat(CUT - 1) + '🔥' + 'x'.repeat(1000);
+  assert.equal(text.charCodeAt(CUT - 1), 0xd83d, '이모지가 절단면에 걸려 있어야 하는 입력이다');
+
+  const impl = stubFetch(() => okResponse());
+  await sendMessage({ token: FAKE_TOKEN, chatId: 1, text, fetchImpl: impl });
+  const out = JSON.parse(impl.calls[0].init.body).text;
+
+  assert.ok(out.length <= 4096, `길이 ${out.length}`);
+  assert.match(out, /잘림/);
+  // 짝 없는 상위/하위 서로게이트가 남아 있으면 안 된다.
+  assert.doesNotMatch(out, /[\uD800-\uDBFF](?![\uDC00-\uDFFF])/,
+    '이모지의 앞쪽 반이 짝 없이 남았다');
+  assert.doesNotMatch(out, /(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/,
+    '이모지의 뒤쪽 반이 짝 없이 남았다');
+  // 실제로 전선에 나가는 형태로 확인한다 — UTF-8 왕복에서 변형되면 깨진 문자가 있다는 뜻이다.
+  assert.equal(Buffer.from(out, 'utf8').toString('utf8'), out,
+    'UTF-8로 내보내면 U+FFFD로 뭉개지는 반쪽 문자가 남아 있다');
+
+  // 반대 방향도 함께 막아야 한다. 이모지가 절단면에 **딱 맞게 끝나면** 쌍이 온전하므로
+  // 그대로 둬야 하는데, 검사 범위를 하위 서로게이트까지 넓히면 멀쩡한 쌍의 뒤쪽 반을
+  // 잘라내 이번엔 앞쪽 반이 홀로 남는다 — 고치려던 것과 똑같은 깨짐을 만든다.
+  const exact = '가'.repeat(CUT - 2) + '🔥' + 'x'.repeat(1000);
+  assert.equal(exact.charCodeAt(CUT - 1), 0xdd25, '이모지가 절단면에서 끝나는 입력이다');
+
+  const impl2 = stubFetch(() => okResponse());
+  await sendMessage({ token: FAKE_TOKEN, chatId: 1, text: exact, fetchImpl: impl2 });
+  const out2 = JSON.parse(impl2.calls[0].init.body).text;
+
+  assert.ok(out2.includes('🔥'), '절단면에 딱 맞게 들어간 이모지를 온전히 남겨야 한다');
+  assert.equal(Buffer.from(out2, 'utf8').toString('utf8'), out2,
+    '온전한 쌍을 잘라내 반쪽을 남겼다');
+});
+
 test('sendMessage: text나 chatId가 비면 전송 시도조차 하지 않는다', async () => {
   const impl = stubFetch(() => okResponse());
   await assert.rejects(() => sendMessage({ token: FAKE_TOKEN, chatId: 1, text: '', fetchImpl: impl }), TypeError);
