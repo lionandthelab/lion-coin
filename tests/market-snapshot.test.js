@@ -41,6 +41,14 @@ test('marketInputsFromTickers: 목록이 비면 시장폭을 50으로 위장하�
   }
 });
 
+test('marketInputsFromTickers: 보합(변동률 0)은 상승이 아니다', () => {
+  // 시장폭은 국면 판정의 두 입력 중 하나이고 문턱이 40/60으로 좁다.
+  // `> 0`을 `>= 0`으로 바꾸면 보합 종목이 상승으로 세어져 국면이 뒤집힌다.
+  // 실측 476종목 중 보합이 5~8개 나오므로 도달 가능한 경계다.
+  const r = marketInputsFromTickers([tk('A', 0.01), tk('B', 0), tk('C', -0.01)]);
+  assert.ok(Math.abs(r.breadthPct - 100 / 3) < 1e-9, `실제 ${r.breadthPct}`);
+});
+
 test('marketInputsFromTickers: 변동률을 못 읽은 종목은 시장폭 계산에서 뺀다', () => {
   // 세지 못한 종목을 분모에 넣으면 하락으로 센 것과 같아진다.
   const r = marketInputsFromTickers([tk('BTC', 0.01), tk('ETH', 0.01), tk('X', null), tk('Y', undefined)]);
@@ -82,7 +90,12 @@ test('isContextUsable: 국면이 없는 시황은 나이와 무관하게 쓰지 
   assert.equal(isContextUsable(null, { at: 1000, now: 1000 }), false);
 });
 
-test('MAX_CONTEXT_AGE_MS: 폴링 주기보다 넉넉하되 한 시간보다는 짧다', () => {
-  assert.ok(MAX_CONTEXT_AGE_MS >= 5 * 60_000);
-  assert.ok(MAX_CONTEXT_AGE_MS <= 60 * 60_000);
+test('MAX_CONTEXT_AGE_MS: 만료 시각을 경계로 고정한다', () => {
+  // **범위 단언은 상수를 고정하지 못한다.** 5~60분 사이 아무 값으로 바꿔도
+  // 통과하므로, 15분을 60분으로 늘려도 아무도 모른다. 이 저장소는 밴드 단언이
+  // 아무것도 못 잡는 사고를 이미 겪었다(STALE_MARKERS 자기참조 루프).
+  // 경계 양쪽을 리터럴로 붙여 값 자체를 못박는다.
+  assert.equal(MAX_CONTEXT_AGE_MS, 15 * 60_000);
+  assert.equal(isContextUsable({ regime: 'neutral' }, { at: 0, now: 15 * 60_000 }), true);
+  assert.equal(isContextUsable({ regime: 'neutral' }, { at: 0, now: 15 * 60_000 + 1 }), false);
 });

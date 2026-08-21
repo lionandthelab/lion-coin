@@ -589,6 +589,28 @@ test('planEventTrade: 자본 자체가 최소 주문금액보다 작으면 비�
   assert.match(p.reason, /자본/);
 });
 
+test('planEventTrade: 자본과 최소 주문금액이 같은 한 점에서 조언이 갈린다', () => {
+  // 가르는 조건은 `capital < minNotionalKrw`다. `<=`로 바꿔도 격자 테스트가
+  // 통과해 버리므로(양쪽 다 executable=false라 주문은 안 나간다) 경계 양쪽을
+  // 짝으로 붙여 부등호 자체를 고정한다.
+  //
+  // 자본 == 최소 주문금액이면 비중을 끝까지 올렸을 때 명목이 자본과 같아져
+  // 정확히 문턱에 닿는다. 그래서 이 점부터는 비중이 답이다.
+  // 비중 0.5%는 양쪽 모두 명목을 자본의 절반으로 만들어 문턱에 못 미치게 한다.
+  // 갈리는 것은 자본이 문턱에 닿는가 하나뿐이다.
+  const below = planEventTrade({ ...base, capital: 4999, riskPct: 0.5, grade: 'B', direction: 'bullish' });
+  const at = planEventTrade({ ...base, capital: 5000, riskPct: 0.5, grade: 'B', direction: 'bullish' });
+  assert.equal(below.executable, false);
+  assert.equal(at.executable, false);
+
+  assert.doesNotMatch(below.reason, /위험 비중을 [\d.]+% 이상으로 올리/, below.reason);
+  assert.match(at.reason, /위험 비중을 [\d.]+% 이상으로 올리/, at.reason);
+
+  // 그리고 자본이 정확히 문턱일 때 비중을 끝까지 올리면 실제로 닿는다.
+  const fixed = planEventTrade({ ...base, capital: 5000, riskPct: 100, grade: 'B', direction: 'bullish' });
+  assert.equal(fixed.executable, true, '자본 == 최소 주문금액이면 비중으로 해결된다');
+});
+
 test('planEventTrade: 비중 조언은 그대로 따르면 실제로 통해야 한다', () => {
   // 조언이 틀리면 이 문자열은 존재 이유를 잃는다. 격자로 훑어 조언대로
   // 다시 계산했을 때 정말 최소 주문금액을 넘는지 확인한다.
