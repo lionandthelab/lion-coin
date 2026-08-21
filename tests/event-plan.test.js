@@ -267,6 +267,44 @@ test('planEventTrade: 가격·자본이 0 이하면 RangeError', () => {
   assert.throws(() => planEventTrade({ ...base, feeBps: -1, grade: 'S', direction: 'bullish' }), RangeError);
 });
 
+test('planEventTrade: 숫자 관문은 각자 자기 이름으로 걸린다 (planBracket에 떠넘기지 않는다)', () => {
+  // 위 테스트는 RangeError **타입만** 본다 — 세 관문(price·capital·riskPct)을 하나씩
+  // 지워도 planBracket이 대신 던져서 그대로 초록이다. 그런데 대신 던진 메시지는
+  // 호출자가 넘긴 적 없는 내부 파라미터명을 노출하거나, 뒤에 있는 다른 관문이
+  // 먼저 가로채 엉뚱한 진단을 내놓는다. 관문의 **존재**를 고정하려면 메시지를 봐야 한다.
+
+  // ① price: planBracket은 이 값을 entryPrice라는 자기 이름으로 부른다. 관문이 사라지면
+  //    "price를 잘못 넣었다"가 아니라 호출자가 본 적 없는 entryPrice가 에러로 새어 나온다.
+  assert.throws(
+    () => planEventTrade({ ...base, price: 0, grade: 'S', direction: 'bullish' }),
+    (err) => {
+      assert.ok(err instanceof RangeError);
+      assert.match(err.message, /price/);
+      assert.doesNotMatch(err.message, /entryPrice/,
+        `planBracket이 대신 던져 내부 파라미터명이 샜다: ${err.message}`);
+      return true;
+    }
+  );
+
+  // ② capital·riskPct: planBracket도 같은 이름을 쓰므로 메시지만으로는 구별되지 않는다.
+  //    구별되는 자리는 **관문의 위치**다. 이 둘은 feeBps 관문보다 앞에 있어야 한다 —
+  //    관문이 사라지면 뒤의 feeBps 관문이 먼저 가로채, 자본이 0인데 "수수료를 적으세요"라는
+  //    엉뚱한 안내가 나가고 진짜 원인은 한 번 더 고쳐 넣어봐야 드러난다.
+  const { feeBps, ...noFee } = base;
+  for (const field of ['capital', 'riskPct']) {
+    assert.throws(
+      () => planEventTrade({ ...noFee, [field]: 0, grade: 'S', direction: 'bullish' }),
+      (err) => {
+        assert.ok(err instanceof RangeError);
+        assert.match(err.message, new RegExp(field), `${field}이(가) 0인데 ${field}를 지목하지 않았다`);
+        assert.doesNotMatch(err.message, /편도 수수료/,
+          `${field} 관문이 사라져 feeBps 관문이 먼저 가로챘다: ${err.message}`);
+        return true;
+      }
+    );
+  }
+});
+
 test('planEventTrade: 검증은 매매 불가 판정보다 나중이다 — 악재면 가격이 없어도 던지지 않는다', () => {
   // 악재 공지는 가격 조회 없이도 즉시 걸러져야 한다.
   const p = planEventTrade({ marketContext: NEUTRAL, grade: 'S', direction: 'bearish' });
