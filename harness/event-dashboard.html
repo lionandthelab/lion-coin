@@ -1,0 +1,447 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>유목민식 이벤트 단타</title>
+<style>
+  /* 실시간 감시 화면이다. 몇 시간을 켜두므로 어두운 배경으로 눈부심을 줄인다. */
+  :root {
+    --bg: #0d1117; --panel: #161b22; --panel2: #1c2128; --line: #30363d;
+    --text: #e6edf3; --dim: #8b949e; --faint: #6e7681;
+    --up: #3fb950; --down: #f85149; --warn: #d29922; --info: #58a6ff; --accent: #a371f7;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 16px; background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', 'Segoe UI', sans-serif;
+    font-size: 14px; line-height: 1.5;
+  }
+  .wrap { max-width: 1280px; margin: 0 auto; }
+  h1 { font-size: 18px; margin: 0 0 4px; font-weight: 700; }
+  h2 { font-size: 13px; margin: 24px 0 10px; color: var(--dim); font-weight: 600;
+       text-transform: uppercase; letter-spacing: .6px; }
+  .sub { color: var(--faint); font-size: 12px; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px; }
+  .row { display: flex; gap: 12px; flex-wrap: wrap; }
+  .grow { flex: 1 1 0; min-width: 0; }
+  code { background: var(--panel2); padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+
+  /* ── 상태 히어로 — 첫눈에 지금 무슨 상태인지 ── */
+  .hero { display: flex; align-items: center; gap: 18px; padding: 18px 20px;
+          border-radius: 12px; border: 1px solid var(--line); background: var(--panel); }
+  .dot { width: 14px; height: 14px; border-radius: 50%; flex: 0 0 auto; }
+  .dot.live { animation: pulse 1.6s ease-in-out infinite; }
+  @keyframes pulse { 0%,100% { opacity: 1; transform: scale(1); } 50% { opacity: .45; transform: scale(.85); } }
+  .hero-state { font-size: 26px; font-weight: 800; letter-spacing: -.5px; }
+  .hero-desc { color: var(--dim); font-size: 13px; margin-top: 2px; }
+  .hero.IDLE    { border-color: var(--line); }
+  .hero.ARMED   { border-color: var(--warn); box-shadow: 0 0 0 1px rgba(210,153,34,.25); }
+  .hero.HOLDING { border-color: var(--info); box-shadow: 0 0 0 1px rgba(88,166,255,.3); }
+  .hero.EXITING { border-color: var(--accent); box-shadow: 0 0 0 1px rgba(163,113,247,.3); }
+  .hero.HALTED  { border-color: var(--down); box-shadow: 0 0 0 1px rgba(248,81,73,.3); }
+
+  /* ── 포지션 카드 — 보유 중에는 이게 화면의 주인공 ── */
+  .pos-sym { font-size: 30px; font-weight: 800; letter-spacing: -1px; }
+  .pnl { font-size: 34px; font-weight: 800; letter-spacing: -1.2px; font-variant-numeric: tabular-nums; }
+  .pnl.up { color: var(--up); } .pnl.down { color: var(--down); }
+  .stat { display: flex; flex-direction: column; gap: 2px; }
+  .stat .k { font-size: 11px; color: var(--faint); text-transform: uppercase; letter-spacing: .4px; }
+  .stat .v { font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; }
+
+  /* 손절 ─── 현재가 ─── 익절 위치를 한 줄로 보여준다.
+     숫자를 읽고 계산하는 것보다 위치를 보는 게 빠르다. */
+  .gauge { position: relative; height: 30px; margin: 6px 0 2px;
+           background: linear-gradient(90deg, rgba(248,81,73,.22), rgba(139,148,158,.12) 50%, rgba(63,185,80,.22));
+           border-radius: 6px; border: 1px solid var(--line); }
+  .gauge .mark { position: absolute; top: -3px; bottom: -3px; width: 3px; background: var(--text);
+                 border-radius: 2px; transition: left .3s ease; }
+  .gauge .entry { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--faint); }
+  .gauge-lbl { display: flex; justify-content: space-between; font-size: 11px; color: var(--faint);
+               font-variant-numeric: tabular-nums; }
+  .bar { height: 6px; background: var(--panel2); border-radius: 3px; overflow: hidden; margin-top: 6px; }
+  .bar > div { height: 100%; background: var(--info); transition: width .5s linear; }
+
+  /* ── 재료 등급 배지 ── */
+  .badge { display: inline-block; padding: 2px 9px; border-radius: 5px; font-size: 11px;
+           font-weight: 800; letter-spacing: .3px; }
+  .g-S { background: #7d1e1e; color: #ffb4b4; }
+  .g-A { background: #7a4a10; color: #ffd08a; }
+  .g-B { background: #5c4d0e; color: #f2e08a; }
+  .g-C { background: #2d333b; color: var(--dim); }
+  .g-null { background: #21262d; color: var(--faint); }
+  .dir-bear { background: #10365c; color: #9dcaff; }
+
+  /* ── 재료 피드 ── */
+  .feed { display: flex; flex-direction: column; }
+  .ev { display: flex; gap: 12px; padding: 11px 0; border-bottom: 1px solid var(--line); align-items: flex-start; }
+  .ev:last-child { border-bottom: 0; }
+  .ev-time { flex: 0 0 62px; font-size: 11px; color: var(--faint); font-variant-numeric: tabular-nums; padding-top: 2px; }
+  .ev-body { flex: 1; min-width: 0; }
+  .ev-title { font-size: 13px; word-break: break-word; }
+  .ev-meta { font-size: 11px; color: var(--faint); margin-top: 3px; }
+  .ev.traded { background: rgba(88,166,255,.06); margin: 0 -8px; padding: 11px 8px; border-radius: 6px; }
+  .tickers { color: var(--info); font-weight: 700; }
+
+  /* ── 소스 상태 ── */
+  .src { display: flex; align-items: center; gap: 7px; padding: 7px 11px; background: var(--panel2);
+         border-radius: 7px; font-size: 12px; }
+  .src .d { width: 7px; height: 7px; border-radius: 50%; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th { text-align: left; color: var(--faint); font-weight: 600; padding: 7px 8px;
+       border-bottom: 1px solid var(--line); font-size: 11px; text-transform: uppercase; }
+  td { padding: 8px; border-bottom: 1px solid var(--line); font-variant-numeric: tabular-nums; }
+  tr:last-child td { border-bottom: 0; }
+  .num { text-align: right; }
+  .up { color: var(--up); } .down { color: var(--down); }
+
+  button { font: inherit; font-weight: 600; padding: 9px 16px; border-radius: 7px;
+           border: 1px solid var(--line); background: var(--panel2); color: var(--text); cursor: pointer; }
+  button:hover:not(:disabled) { border-color: var(--faint); }
+  button:disabled { opacity: .35; cursor: not-allowed; }
+  button.go { background: #17351f; border-color: #2ea043; color: #7ee787; }
+  button.stop { background: #3d1d1d; border-color: #a13b32; color: #ffa198; }
+  button.live { background: #5c1d1d; border-color: var(--down); color: #ffb4b4; }
+  input[type=text] { font: inherit; padding: 8px 11px; border-radius: 6px;
+                     border: 1px solid var(--line); background: var(--bg); color: var(--text); }
+  .empty { color: var(--faint); font-size: 13px; padding: 20px 0; text-align: center; }
+</style>
+
+<div class="wrap">
+  <h1>유목민식 이벤트 단타</h1>
+  <div class="sub" id="tagline">재료를 포착해 등급을 매기고, 기대감과 시황으로 손익폭을 정해 짧게 실현합니다.</div>
+
+  <div class="hero IDLE" id="hero" style="margin-top:14px">
+    <div class="dot" id="heroDot" style="background:var(--faint)"></div>
+    <div class="grow">
+      <div class="hero-state" id="heroState">연결 중…</div>
+      <div class="hero-desc" id="heroDesc">서버 상태를 읽고 있습니다</div>
+    </div>
+    <div style="text-align:right">
+      <div class="stat"><span class="k">오늘</span>
+        <span class="v" id="todayLine">—</span></div>
+    </div>
+  </div>
+
+  <!-- 보유 중일 때만 나타난다. 이때는 이 카드가 화면의 주인공이다. -->
+  <div id="posWrap" style="display:none;margin-top:12px">
+    <div class="panel">
+      <div class="row" style="align-items:flex-start">
+        <div class="grow">
+          <div class="pos-sym" id="posSym">—</div>
+          <div class="sub" id="posWhy">—</div>
+        </div>
+        <div style="text-align:right">
+          <div class="pnl" id="posPnl">—</div>
+          <div class="sub" id="posPnlKrw">—</div>
+        </div>
+      </div>
+
+      <div class="gauge" id="gauge" style="margin-top:16px">
+        <div class="entry" id="gEntry" style="left:50%"></div>
+        <div class="mark" id="gMark" style="left:50%"></div>
+      </div>
+      <div class="gauge-lbl">
+        <span id="gSl">손절 —</span><span id="gEntryLbl">진입 —</span><span id="gTp">익절 —</span>
+      </div>
+
+      <div class="bar"><div id="timeBar" style="width:0%"></div></div>
+      <div class="gauge-lbl" style="margin-top:3px">
+        <span id="holdElapsed">보유 —</span><span id="holdLeft">남은 시간 —</span>
+      </div>
+
+      <div class="row" style="margin-top:16px">
+        <div class="stat grow"><span class="k">진입가</span><span class="v" id="pEntry">—</span></div>
+        <div class="stat grow"><span class="k">현재가</span><span class="v" id="pNow">—</span></div>
+        <div class="stat grow"><span class="k">수량</span><span class="v" id="pQty">—</span></div>
+        <div class="stat grow"><span class="k">투입</span><span class="v" id="pNotional">—</span></div>
+      </div>
+    </div>
+  </div>
+
+  <h2>제어</h2>
+  <div class="panel">
+    <div class="row">
+      <button id="btnWatch" class="go">▶ 감시 시작 (모의)</button>
+      <button id="btnStop" class="stop">■ 정지</button>
+      <button id="btnLive" class="live">⚠ 실거래 시작</button>
+    </div>
+    <div class="sub" id="ctrlNote" style="margin-top:10px"></div>
+
+    <!-- 브라우저 confirm()은 차단되면 조용히 false를 반환해 버튼이 죽은 것처럼 보인다.
+         페이지 안에서 확인받으면 그 실패 모드가 사라지고, 문구 입력을 요구하므로 관문도 강해진다. -->
+    <div id="liveConfirm" style="display:none;margin-top:14px;padding:14px;border:2px solid var(--down);border-radius:8px;background:rgba(248,81,73,.07)">
+      <div style="font-weight:800;color:#ffb4b4;margin-bottom:8px">⚠ 실거래로 전환합니다</div>
+      <div style="line-height:1.7">
+        재료가 포착되면 <b>실제 주문이 빗썸으로 전송되고 실제 돈이 오갑니다.</b><br>
+        <span class="sub" id="lcCfg"></span>
+      </div>
+      <div style="margin-top:12px">
+        계속하려면 <code>실거래</code> 를 입력하세요:
+        <input id="lcInput" type="text" autocomplete="off" style="width:130px;margin-left:6px">
+      </div>
+      <div style="margin-top:12px">
+        <button id="lcGo" class="live" disabled>확인하고 전환</button>
+        <button id="lcCancel">취소</button>
+      </div>
+    </div>
+  </div>
+
+  <h2>재료 수집 상태</h2>
+  <div class="row" id="sources"></div>
+
+  <h2>포착된 재료 <span class="sub" id="evCount"></span></h2>
+  <div class="panel"><div class="feed" id="feed"></div></div>
+
+  <h2>오늘의 매매</h2>
+  <div class="panel"><div id="trades"></div></div>
+
+  <h2 style="margin-bottom:6px">설정</h2>
+  <div class="panel"><div id="cfg" class="sub" style="line-height:1.9"></div></div>
+</div>
+
+<script>
+var $ = function (id) { return document.getElementById(id); };
+var esc = function (s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+  });
+};
+var won = function (n) { return n == null ? '—' : Math.round(n).toLocaleString('ko-KR') + '원'; };
+var px = function (n) {
+  if (n == null) return '—';
+  // 코인은 가격대가 1원 미만부터 1억까지 걸쳐 있다. 유효숫자를 가격대에 맞춰야 읽힌다.
+  var d = n >= 1000 ? 0 : n >= 10 ? 1 : n >= 1 ? 2 : n >= 0.01 ? 4 : 6;
+  return n.toLocaleString('ko-KR', { minimumFractionDigits: d, maximumFractionDigits: d });
+};
+var bps = function (n) { return (n == null) ? '—' : (n >= 0 ? '+' : '') + n.toFixed(0) + 'bps'; };
+// 실시간 시스템에서는 절대시각보다 상대시각이 훨씬 유용하다 — "방금"인지가 핵심이다.
+var ago = function (t) {
+  if (!t) return '—';
+  var s = Math.max(0, Math.round((Date.now() - t) / 1000));
+  if (s < 5) return '방금';
+  if (s < 60) return s + '초 전';
+  if (s < 3600) return Math.floor(s / 60) + '분 전';
+  if (s < 86400) return Math.floor(s / 3600) + '시간 전';
+  return Math.floor(s / 86400) + '일 전';
+};
+var mmss = function (sec) {
+  if (sec == null || sec < 0) return '—';
+  var m = Math.floor(sec / 60), s = Math.floor(sec % 60);
+  return m + '분 ' + (s < 10 ? '0' : '') + s + '초';
+};
+
+var STATE_DESC = {
+  IDLE: '재료를 기다리는 중입니다',
+  ARMED: '재료 포착 — 진입 준비 중',
+  HOLDING: '보유 중 · 실시간 모니터링',
+  EXITING: '청산 주문 전송됨',
+  HALTED: '중단됨 — 새 진입이 차단됩니다'
+};
+var STATE_COLOR = {
+  IDLE: 'var(--faint)', ARMED: 'var(--warn)', HOLDING: 'var(--info)',
+  EXITING: 'var(--accent)', HALTED: 'var(--down)'
+};
+
+var last = null;
+
+function renderHero(s) {
+  var st = (s.fsm && s.fsm.status) || 'IDLE';
+  var hero = $('hero');
+  hero.className = 'hero ' + st;
+  $('heroDot').style.background = STATE_COLOR[st] || 'var(--faint)';
+  $('heroDot').className = 'dot' + (s.mode !== 'stopped' ? ' live' : '');
+  $('heroState').textContent = st;
+  var desc = STATE_DESC[st] || '';
+  if (s.mode === 'stopped') desc = '정지 상태 — 감시하지 않습니다';
+  else if (s.mode === 'live') desc = desc + ' · 실거래';
+  else desc = desc + ' · 모의';
+  $('heroDesc').textContent = desc;
+
+  var t = s.today || {};
+  if (!t.trades) { $('todayLine').textContent = '거래 없음'; $('todayLine').className = 'v'; }
+  else {
+    $('todayLine').textContent = t.trades + '거래 · ' + bps(t.netBps) + ' · ' + won(t.netKrw);
+    $('todayLine').className = 'v ' + (t.netKrw >= 0 ? 'up' : 'down');
+  }
+}
+
+function renderPosition(s) {
+  var p = s.position;
+  if (!p) { $('posWrap').style.display = 'none'; return; }
+  $('posWrap').style.display = 'block';
+
+  $('posSym').textContent = p.symbol;
+  $('posWhy').textContent = (p.grade ? p.grade + '급 · ' : '') + (p.eventTitle || '');
+  var up = (p.unrealizedBps || 0) >= 0;
+  $('posPnl').textContent = bps(p.unrealizedBps);
+  $('posPnl').className = 'pnl ' + (up ? 'up' : 'down');
+  $('posPnlKrw').textContent = (up ? '+' : '') + won(p.unrealizedKrw);
+
+  // 손절 ─ 진입 ─ 익절 축에서 현재가가 어디쯤인지. 숫자보다 위치가 빨리 읽힌다.
+  var lo = p.stopLossPrice, hi = p.takeProfitPrice, now = p.currentPrice, en = p.entryPrice;
+  if (lo != null && hi != null && now != null && hi > lo) {
+    var pct = Math.max(0, Math.min(100, ((now - lo) / (hi - lo)) * 100));
+    $('gMark').style.left = 'calc(' + pct + '% - 1.5px)';
+    $('gMark').style.background = up ? 'var(--up)' : 'var(--down)';
+    var epct = Math.max(0, Math.min(100, ((en - lo) / (hi - lo)) * 100));
+    $('gEntry').style.left = epct + '%';
+  }
+  $('gSl').textContent = '손절 ' + px(lo);
+  $('gEntryLbl').textContent = '진입 ' + px(en);
+  $('gTp').textContent = '익절 ' + px(hi);
+
+  var elapsed = p.holdSec || 0, max = p.maxHoldSec || 1;
+  $('timeBar').style.width = Math.min(100, (elapsed / max) * 100) + '%';
+  $('timeBar').style.background = elapsed / max > 0.8 ? 'var(--warn)' : 'var(--info)';
+  $('holdElapsed').textContent = '보유 ' + mmss(elapsed);
+  $('holdLeft').textContent = '남은 시간 ' + mmss(max - elapsed);
+
+  $('pEntry').textContent = px(en);
+  $('pNow').textContent = px(now);
+  $('pQty').textContent = p.quantity == null ? '—' : p.quantity;
+  $('pNotional').textContent = won(p.notional);
+}
+
+function gradeBadge(e) {
+  if (e.direction === 'bearish' && e.grade) {
+    return '<span class="badge dir-bear">' + esc(e.grade) + '급 악재</span>';
+  }
+  var g = e.grade || 'null';
+  var label = e.grade ? e.grade + '급' : '대상 아님';
+  return '<span class="badge g-' + esc(g) + '">' + esc(label) + '</span>';
+}
+
+function renderFeed(s) {
+  var evs = s.events || [];
+  $('evCount').textContent = evs.length ? '— 최근 ' + evs.length + '건' : '';
+  if (!evs.length) {
+    $('feed').innerHTML = '<div class="empty">아직 포착된 재료가 없습니다.<br>'
+      + '거래소 공지와 뉴스를 ' + ((s.config && s.config.pollIntervalSec) || '?') + '초마다 확인합니다.</div>';
+    return;
+  }
+  var html = '';
+  for (var i = 0; i < evs.length; i++) {
+    var e = evs[i];
+    html += '<div class="ev' + (e.traded ? ' traded' : '') + '">'
+      + '<div class="ev-time">' + esc(ago(e.at)) + '</div>'
+      + '<div class="ev-body">'
+      + '<div class="ev-title">' + gradeBadge(e) + ' '
+      + (e.tickers && e.tickers.length ? '<span class="tickers">' + esc(e.tickers.join(', ')) + '</span> ' : '')
+      + esc(e.title) + '</div>'
+      + '<div class="ev-meta">' + esc(e.source) + (e.kind ? ' · ' + esc(e.kind) : '')
+      + (e.stale ? ' · <span style="color:var(--warn)">이미 반영된 후속 공지</span>' : '')
+      + (e.traded ? ' · <span style="color:var(--info)">매매함</span>' : (e.reason ? ' · ' + esc(e.reason) : ''))
+      + '</div></div></div>';
+  }
+  $('feed').innerHTML = html;
+}
+
+function renderSources(s) {
+  var srcs = s.sources || [];
+  if (!srcs.length) { $('sources').innerHTML = '<div class="sub">—</div>'; return; }
+  var html = '';
+  for (var i = 0; i < srcs.length; i++) {
+    var c = srcs[i];
+    var color = c.ok ? 'var(--up)' : 'var(--down)';
+    html += '<div class="src"><div class="d" style="background:' + color + '"></div>'
+      + '<b>' + esc(c.source) + '</b>'
+      + '<span class="sub">' + (c.ok ? esc(ago(c.lastFetchAt)) : esc(c.error || '실패')) + '</span>'
+      + '<span class="sub">· 누적 ' + (c.count || 0) + '</span></div>';
+  }
+  $('sources').innerHTML = html;
+}
+
+function renderTrades(s) {
+  var ts = s.trades || [];
+  if (!ts.length) {
+    $('trades').innerHTML = '<div class="empty">오늘 체결된 매매가 없습니다.</div>';
+    return;
+  }
+  var html = '<table><tr><th>시각</th><th>종목</th><th>재료</th><th class="num">진입</th>'
+    + '<th class="num">청산</th><th class="num">수익</th><th class="num">손익</th>'
+    + '<th>사유</th><th class="num">보유</th></tr>';
+  for (var i = 0; i < ts.length; i++) {
+    var t = ts[i];
+    var cls = t.returnBps >= 0 ? 'up' : 'down';
+    html += '<tr><td>' + esc(new Date(t.at).toLocaleTimeString('ko-KR')) + '</td>'
+      + '<td><b>' + esc(t.symbol) + '</b></td>'
+      + '<td>' + (t.grade ? esc(t.grade) + '급' : '—') + '</td>'
+      + '<td class="num">' + px(t.entryPrice) + '</td>'
+      + '<td class="num">' + px(t.exitPrice) + '</td>'
+      + '<td class="num ' + cls + '">' + bps(t.returnBps) + '</td>'
+      + '<td class="num ' + cls + '">' + won(t.pnlKrw) + '</td>'
+      + '<td>' + esc(t.outcome || '') + '</td>'
+      + '<td class="num">' + mmss(t.holdSec) + '</td></tr>';
+  }
+  $('trades').innerHTML = html + '</table>';
+}
+
+function renderConfig(s) {
+  var c = s.config || {};
+  $('cfg').innerHTML =
+    '매매 하한 등급 <b>' + esc(c.minGrade) + '</b> · 폴링 <b>' + esc(c.pollIntervalSec) + '초</b>'
+    + ' · 보유 중 가격 확인 <b>' + esc(c.priceTickSec) + '초</b><br>'
+    + '자본 <b>' + won(c.capitalKrw) + '</b> · 1회 위험 <b>' + esc(c.riskPct) + '%</b>'
+    + ' · 최소 주문 <b>' + won(c.minNotionalKrw) + '</b> · 스프레드 상한 <b>' + esc(c.maxSpreadBps) + 'bps</b><br>'
+    + '이미 반영된 후속 공지 매매: <b>' + (c.tradeStaleEvents ? '함' : '안 함') + '</b>'
+    + ' · 텔레그램: <b>' + (s.telegram && s.telegram.enabled ? '켜짐' : '꺼짐') + '</b>'
+    + (s.telegram && s.telegram.lastSentAt ? ' (마지막 ' + esc(ago(s.telegram.lastSentAt)) + ')' : '');
+}
+
+function renderControls(s) {
+  var stopped = s.mode === 'stopped';
+  $('btnWatch').disabled = !stopped;
+  $('btnStop').disabled = stopped;
+  $('btnLive').disabled = !s.liveApproved || !s.hasKeys || s.mode === 'live';
+  var note = [];
+  if (!s.liveApproved) note.push('실거래 승인 꺼짐 (.env의 BITHUMB_LIVE=1 필요)');
+  if (!s.hasKeys) note.push('빗썸 API 키 없음');
+  if (s.errors && s.errors.length) {
+    note.push('<span style="color:var(--down)">최근 오류: ' + esc(s.errors[0].message || s.errors[0]) + '</span>');
+  }
+  if (!note.length) note.push(s.mode === 'live' ? '실거래 진행 중입니다.' : '실거래 준비됨 — 버튼은 직접 누르셔야 합니다.');
+  $('ctrlNote').innerHTML = note.join(' · ');
+}
+
+async function refresh() {
+  var s;
+  try { s = await (await fetch('/api/state')).json(); }
+  catch (e) { $('heroState').textContent = '연결 끊김'; $('heroDesc').textContent = e.message; return; }
+  last = s;
+  renderHero(s); renderPosition(s); renderControls(s);
+  renderSources(s); renderFeed(s); renderTrades(s); renderConfig(s);
+}
+
+async function setMode(mode, confirmLive) {
+  var r = await (await fetch('/api/mode', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ mode: mode, confirmLive: !!confirmLive })
+  })).json();
+  // alert()도 차단될 수 있다 — 화면에 남긴다.
+  if (!r.ok) $('ctrlNote').innerHTML = '<span style="color:var(--down)">전환 실패: ' + esc(r.reason) + '</span>';
+  refresh();
+}
+
+$('btnWatch').addEventListener('click', function () { setMode('watching'); });
+$('btnStop').addEventListener('click', function () { setMode('stopped'); });
+$('btnLive').addEventListener('click', function () {
+  var c = last && last.config;
+  if (c) {
+    $('lcCfg').textContent = '하한 등급 ' + c.minGrade + ' · 자본 ' + won(c.capitalKrw)
+      + ' · 1회 위험 ' + c.riskPct + '% · 재료 등급별로 익절·손절과 최대 보유시간이 자동 결정됩니다.';
+  }
+  $('lcInput').value = ''; $('lcGo').disabled = true;
+  $('liveConfirm').style.display = 'block'; $('lcInput').focus();
+});
+$('lcInput').addEventListener('input', function () { $('lcGo').disabled = this.value.trim() !== '실거래'; });
+$('lcInput').addEventListener('keydown', function (e) { if (e.key === 'Enter' && !$('lcGo').disabled) $('lcGo').click(); });
+$('lcCancel').addEventListener('click', function () { $('liveConfirm').style.display = 'none'; });
+$('lcGo').addEventListener('click', function () {
+  if ($('lcInput').value.trim() !== '실거래') return;
+  $('liveConfirm').style.display = 'none';
+  setMode('live', true);
+});
+
+refresh();
+// 실시간 시스템이라 1초 주기로 갱신한다. 보유 중에는 남은 시간과 손익이 계속 움직인다.
+setInterval(refresh, 1000);
+</script>
