@@ -295,6 +295,38 @@ async function fetchRss({ url, source, fetchImpl } = {}) {
   return parseRss(await res.text(), source);
 }
 
+
+// 나이로 거른다 — 중복 제거만으로는 막을 수 없는 실패가 있다.
+//
+// 폴링 첫 회에는 seenIds가 비어 있어 응답 전체가 "처음 보는 것"이 된다. 실제로
+// 감시 모드를 처음 켰을 때 27일 전 공지까지 신규 재료로 잡혔다(2026-08-21).
+// 유목민식 매매의 전제는 "아직 시장에 퍼지지 않은 재료"인데, 나이 제한이 없으면
+// 이미 다 반영된 옛 뉴스를 재료로 믿고 정확히 고점을 사게 된다.
+//
+// 걸러낸 것도 함께 돌려준다. 화면에는 보여야 무엇이 지나갔는지 사람이 판단할 수 있다.
+function filterFreshEvents(events, { maxAgeMs, now = Date.now() } = {}) {
+  if (!Array.isArray(events)) {
+    throw new TypeError('filterFreshEvents의 events는 배열이어야 합니다');
+  }
+  if (typeof maxAgeMs !== 'number' || !Number.isFinite(maxAgeMs) || maxAgeMs <= 0) {
+    throw new RangeError(`maxAgeMs는 양의 유한수여야 합니다: ${maxAgeMs}`);
+  }
+
+  const fresh = [];
+  const stale = [];
+  for (const ev of events) {
+    const at = ev && typeof ev.at === 'number' && Number.isFinite(ev.at) ? ev.at : null;
+    // 시각을 모르는 항목은 신선한 쪽에 넣지 않는다. 언제 나온 재료인지 모른 채
+    // 진입하면 나이 제한을 둔 의미가 없어진다.
+    if (at == null) { stale.push(ev); continue; }
+    // 미래 시각은 신선한 것으로 본다 — 거래소 서버와 시계가 몇 초 어긋날 수 있고,
+    // 그걸 버리면 방금 나온 공지를 놓친다.
+    if (now - at <= maxAgeMs) fresh.push(ev);
+    else stale.push(ev);
+  }
+  return { fresh, stale };
+}
+
 module.exports = {
   EVENT_KEYS,
   KST_OFFSET,
@@ -308,5 +340,6 @@ module.exports = {
   fetchBithumbNotices,
   fetchRss,
   dedupeNewEvents,
+  filterFreshEvents,
   hasUsableTime,
 };
