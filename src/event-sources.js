@@ -55,14 +55,22 @@ function toEpochMs(value) {
   return Number.isFinite(ms) ? ms : null;
 }
 
+// RFC-822/1123은 숫자 오프셋 대신 GMT·UTC 같은 문자 표기도 허용한다. 이것을
+// "오프셋 없음"으로 보면 KST 분기의 날짜 형식과도 맞지 않아 null이 되고, 그런 피드는
+// 전 항목이 at: null이 되어 신선도 필터에서 통째로 버려진다 — 소스 하나가 조용히 죽는다.
+// Date.parse가 이 표기를 정확히 읽으므로 그대로 넘긴다.
+// 목록은 좁게 유지한다. KST처럼 Date.parse가 모르는 표기를 임의로 +09:00이라고
+// 단정하면, 이 모듈이 가장 피하려는 "9시간 어긋난 시각"을 스스로 만들어낸다.
+const NAMED_UTC_ZONE = /\s(?:UT|GMT|UTC|[ECMP][SD]T)$/i;
+
 // 오프셋이 없는 "YYYY-MM-DD HH:mm:ss" 형태에만 KST를 붙인다.
-// 이미 오프셋(Z, +09:00)이 있으면 그 값을 존중한다 — 임의로 덧씌우면 실제로 UTC로
+// 이미 오프셋(Z, +09:00, GMT)이 있으면 그 값을 존중한다 — 임의로 덧씌우면 실제로 UTC로
 // 주는 날 9시간이 어긋난다.
 function toEpochMsKst(value) {
   if (typeof value !== 'string') return null;
   const s = value.trim();
   if (s === '') return null;
-  if (/[zZ]$|[+-]\d{2}:?\d{2}$/.test(s)) return toEpochMs(s);
+  if (/[zZ]$|[+-]\d{2}:?\d{2}$/.test(s) || NAMED_UTC_ZONE.test(s)) return toEpochMs(s);
   const m = s.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?$/);
   if (!m) return null;
   const [, y, mo, d, h, mi, sec = '00'] = m;
@@ -78,6 +86,17 @@ function normalizeCategory(value) {
 // 업비트 공지는 API가 상세 URL을 주지 않는다. 공지 번호로 조립한다.
 function upbitNoticeUrl(id) {
   return `https://upbit.com/service_center/notice?id=${id}`;
+}
+
+// 공지 번호가 실제로 쓸 수 있는 값일 때만 참이다.
+// `upbit:${undefined}`는 'upbit:undefined'라는 멀쩡한 문자열이라 dedupeNewEvents의
+// "비어 있지 않은 id" 검사를 통과한다. 그래서 번호 없는 공지가 여러 건 오면 전부
+// 같은 id가 되고, 파서에서는 지켜지던 "출력 개수 = 입력 개수"가 중복 제거 단계에서
+// 무너져 서로 다른 공지가 조용히 한 건으로 합쳐진다.
+function upbitNoticeNo(id) {
+  if (typeof id === 'number') return Number.isFinite(id) ? String(id) : null;
+  if (typeof id === 'string' && id.trim() !== '') return id.trim();
+  return null;
 }
 
 function parseUpbitNotices(json) {
@@ -103,19 +122,42 @@ function parseUpbitNotices(json) {
     // 최초 게시가 없을 때만 listed_at으로 물러선다.
     const first = toEpochMsKst(n.first_listed_at);
     const listed = toEpochMsKst(n.listed_at);
+    // 번호가 없으면 항목을 버리는 대신, 폴링 간 재현되는 내용 해시로 물러선다.
+    // 빗썸 쪽과 같은 전략이다 — id가 호출마다 달라지면 중복 제거가 통째로 무력해진다.
+    const no = upbitNoticeNo(n.id);
     return {
-      id: `upbit:${n.id}`,
+      id: no !== null
+        ? `upbit:${no}`
+        : `upbit:h_${shortHash(typeof n.title === 'string' ? n.title : '', String(n.first_listed_at ?? ''), String(n.listed_at ?? ''))}`,
       source: 'upbit',
       at: first !== null ? first : listed,
       title: typeof n.title === 'string' ? n.title : '',
       category: normalizeCategory(n.category),
-      url: n.id === undefined || n.id === null ? null : upbitNoticeUrl(n.id),
+      url: no !== null ? upbitNoticeUrl(no) : null,
       updatedAt: listed,
     };
   });
 }
 
 // ---- 빗썸 ----
+
+// pc_url 경로 끝의 공지 번호를 뽑는다. 쿼리(?utm_source=...)와 프래그먼트(#top)는
+// 같은 공지를 가리키는 장식일 뿐인데, 이것이 붙었다고 번호 추출이 실패하면 해시 id로
+// 떨어져 이미 본 공지가 새 재료로 되살아난다.
+function bithumbNoticeNo(pcUrl) {
+  if (typeof pcUrl !== 'string') return null;
+  const m = pcUrl.split(/[?#]/, 1)[0].match(/\/(\d+)\/?$/);
+  return m ? m[1] : null;
+}
+
+// 공지 번호도 제목도 발행 시각도 없는 항목의 마지막 수단.
+// shortHash('', '')는 항상 같은 값이라, 단서가 없는 항목이 여러 건 오면 전부 한 id로
+// 뭉쳐 중복 제거에서 한 건만 남고 나머지가 사라진다. 남은 단서는 항목 내용 전체뿐이므로
+// 키를 정렬해 안정적으로 해시한다 — 같은 내용은 매 폴링 같은 id여야 한다.
+function bithumbRowHash(row) {
+  const keys = Object.keys(row).sort();
+  return shortHash(...keys.map((k) => `${k}=${JSON.stringify(row[k])}`));
+}
 
 function parseBithumbNotices(json) {
   const rows = Array.isArray(json) ? json : json && typeof json === 'object' ? json.data : null;
@@ -128,11 +170,18 @@ function parseBithumbNotices(json) {
       throw new TypeError(`빗썸 공지[${i}]가 객체가 아닙니다`);
     }
     // 빗썸 응답에는 안정적인 숫자 id 필드가 없다. pc_url 끝의 공지 번호가 사실상의
-    // 고유 키이므로 그것을 쓰고, 없을 때만 제목+발행시각 해시로 물러선다.
+    // 고유 키이므로 그것을 먼저 쓰고, 없을 때 제목+발행시각 → 항목 전체 순으로 물러선다.
     // 해시를 쓰는 이유는 id가 호출마다 달라지면(예: 배열 인덱스나 난수) 중복 제거가
     // 통째로 무력해져 같은 공지로 매 폴링마다 다시 진입하기 때문이다.
-    const num = typeof n.pc_url === 'string' ? n.pc_url.match(/\/(\d+)\/?$/) : null;
-    const id = num ? `bithumb:${num[1]}` : `bithumb:h_${shortHash(n.title || '', n.published_at || '')}`;
+    const no = bithumbNoticeNo(n.pc_url);
+    let id;
+    if (no !== null) {
+      id = `bithumb:${no}`;
+    } else if (n.title || n.published_at) {
+      id = `bithumb:h_${shortHash(n.title || '', n.published_at || '')}`;
+    } else {
+      id = `bithumb:h_${bithumbRowHash(n)}`;
+    }
     return {
       id,
       source: 'bithumb',
@@ -150,10 +199,21 @@ function parseBithumbNotices(json) {
 
 const ENTITIES = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ' };
 
+// 숫자 문자참조를 문자로 바꾸되, 바꿀 수 없으면 원문을 그대로 둔다.
+// String.fromCodePoint는 범위를 벗어난 값에 RangeError를 던진다. 그 예외가 파서 밖으로
+// 올라가면 제목 하나가 깨졌다는 이유로 그 폴링에서 받은 기사 전체가 사라진다 —
+// 이 모듈이 내세운 "항목을 버리지 않는다"의 정반대이고, 감시가 조용히 멈추는 경로다.
+// 홀로 남은 서로게이트(D800~DFFF)도 던지지는 않지만 깨진 UTF-16을 만들므로 제외한다.
+function decodeCodePoint(raw, cp) {
+  if (!Number.isInteger(cp) || cp <= 0 || cp > 0x10ffff) return raw;
+  if (cp >= 0xd800 && cp <= 0xdfff) return raw;
+  return String.fromCodePoint(cp);
+}
+
 function decodeEntities(s) {
   return s
-    .replace(/&#x([0-9a-f]+);/gi, (_, hex) => String.fromCodePoint(parseInt(hex, 16)))
-    .replace(/&#(\d+);/g, (_, dec) => String.fromCodePoint(Number(dec)))
+    .replace(/&#x([0-9a-f]+);/gi, (m, hex) => decodeCodePoint(m, parseInt(hex, 16)))
+    .replace(/&#(\d+);/g, (m, dec) => decodeCodePoint(m, Number(dec)))
     // 한 번만 푼다. &amp;amp; 같은 이중 인코딩을 끝까지 벗기면 원문에 실제로 들어 있던
     // "&amp;"까지 바꿔버려, 제목이 원문과 달라진다.
     .replace(/&(amp|lt|gt|quot|apos|nbsp);/gi, (_, name) => ENTITIES[name.toLowerCase()]);
@@ -223,6 +283,7 @@ function dedupeNewEvents(events, seenIds, { maxSeen = DEFAULT_MAX_SEEN } = {}) {
   }
   const seen = new Set(seenIds || []);
   const fresh = [];
+  const added = [];
 
   for (const e of events) {
     if (!e || typeof e.id !== 'string' || e.id === '') {
@@ -232,12 +293,25 @@ function dedupeNewEvents(events, seenIds, { maxSeen = DEFAULT_MAX_SEEN } = {}) {
     if (seen.has(e.id)) continue;
     seen.add(e.id);
     fresh.push(e);
+    added.push(e.id);
   }
 
-  // Set은 삽입 순서를 지키므로 앞쪽(오래된 id)부터 버린다.
-  if (Number.isFinite(maxSeen) && maxSeen > 0 && seen.size > maxSeen) {
-    const keep = [...seen].slice(seen.size - maxSeen);
-    return { fresh, seenIds: new Set(keep) };
+  // 절삭은 "가장 오래 전에 본 id"부터 버려야 한다. 그런데 거래소·RSS는 모두 최신순으로
+  // 주므로 배치 안의 삽입 순서는 최신 → 오래된 것이다. 그대로 뒤에서 잘라내면 정확히
+  // 최신 공지가 먼저 지워지고, 바로 다음 폴링에서 새 재료로 되살아나 이미 반영된
+  // 자리에서 진입하게 만든다. 그래서 이번 배치분은 순서를 뒤집어 넣는다 —
+  // 그래야 Set 전체의 삽입 순서가 오래된 것 → 최신 순이 되어 뒤쪽이 최신이 된다.
+  if (added.length > 1) {
+    for (const id of added) seen.delete(id);
+    for (let i = added.length - 1; i >= 0; i -= 1) seen.add(added[i]);
+  }
+
+  // 상한은 폴링이 쌓이며 Set이 무한히 커지는 것을 막기 위한 것이지, 이번에 본 것을
+  // 잊기 위한 것이 아니다. 한 배치보다 작은 상한을 그대로 적용하면 방금 본 공지를
+  // 즉시 잊어 중복 제거가 구조적으로 무력해진다. 이번 배치는 최소한 전부 기억한다.
+  const cap = Number.isFinite(maxSeen) && maxSeen > 0 ? Math.max(maxSeen, added.length) : null;
+  if (cap !== null && seen.size > cap) {
+    return { fresh, seenIds: new Set([...seen].slice(seen.size - cap)) };
   }
   return { fresh, seenIds: seen };
 }
