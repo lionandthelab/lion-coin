@@ -45,6 +45,26 @@ test('assessMarketContext: 경계값은 어느 쪽에도 넣지 않는다 (초�
   assert.equal(assessMarketContext({ btcChange24hBps: 300, breadthPct: 40 }).regime, 'neutral');
 });
 
+// risk_on은 AND 조건이라 두 축을 동시에 경계에 두면 어느 한쪽 문턱이 크게 움직여도
+// 결과가 뒤집히지 않는다 — 문턱을 고정하려면 **한 축만** 경계에 두고 다른 축은 넉넉히
+// 넘겨 둬야 한다. 아래 두 테스트가 각각 BTC 문턱과 시장폭 문턱을 따로 못박는다.
+test('assessMarketContext: risk_on의 BTC 문턱은 200bps 초과다 (시장폭은 넉넉히 넘긴 상태)', () => {
+  assert.equal(assessMarketContext({ btcChange24hBps: 200, breadthPct: 70 }).regime, 'neutral');
+  assert.equal(assessMarketContext({ btcChange24hBps: 200.1, breadthPct: 70 }).regime, 'risk_on');
+});
+
+test('assessMarketContext: risk_on의 시장폭 문턱은 60% 초과다 (BTC는 넉넉히 넘긴 상태)', () => {
+  assert.equal(assessMarketContext({ btcChange24hBps: 250, breadthPct: 60 }).regime, 'neutral');
+  assert.equal(assessMarketContext({ btcChange24hBps: 250, breadthPct: 60.1 }).regime, 'risk_on');
+});
+
+test('assessMarketContext: risk_off 문턱도 축별로 고정된다 (OR 조건)', () => {
+  assert.equal(assessMarketContext({ btcChange24hBps: -200, breadthPct: 70 }).regime, 'neutral');
+  assert.equal(assessMarketContext({ btcChange24hBps: -200.1, breadthPct: 70 }).regime, 'risk_off');
+  assert.equal(assessMarketContext({ btcChange24hBps: 300, breadthPct: 40 }).regime, 'neutral');
+  assert.equal(assessMarketContext({ btcChange24hBps: 300, breadthPct: 39.9 }).regime, 'risk_off');
+});
+
 test('assessMarketContext: 시황 데이터가 없으면 neutral로 위장하지 않고 null을 돌려준다', () => {
   const ctx = assessMarketContext({});
   assert.equal(ctx.regime, null);
@@ -252,4 +272,207 @@ test('planEventTrade: 검증은 매매 불가 판정보다 나중이다 — 악�
   const p = planEventTrade({ marketContext: NEUTRAL, grade: 'S', direction: 'bearish' });
   assert.equal(p.executable, false);
   assert.equal(p.side, null);
+});
+
+// ---- planEventTrade: 손상된 시황 객체 ----
+//
+// marketContext는 이 모듈이 만들지 않는다 — 호출자가 만들어 넣는다. 그래서 다른
+// 입력값과 달리 "여기 오기 전에 검증됐겠지"를 가정할 수 없다. 배수는 익절폭에 그대로
+// 곱해지므로 손상된 값 하나가 계획 전체를 조용히 망가뜨린다.
+
+test('planEventTrade: 배수가 null이면 매매하지 않는다 (300 * null === 0이라 조용히 익절 0이 된다)', () => {
+  // NaN이었다면 하류에서 시끄럽게 터졌을 자리다. null은 곱셈에서 0이 되어
+  // "진입 즉시 익절"인 계획을 정상처럼 통과시킨다.
+  const p = planEventTrade({ ...base, marketContext: { regime: 'neutral', multiplier: null }, grade: 'A', direction: 'bullish' });
+  assert.equal(p.executable, false);
+  assert.equal(p.side, null);
+  assert.equal(p.takeProfitBps, null);
+  assert.match(p.reason, /배수/);
+});
+
+test('planEventTrade: 배수가 상한을 넘으면 매매하지 않는다 (익절에 영영 닿지 않는 계획을 막는다)', () => {
+  // 상한이 없으면 손상된 시황이 익절 3,000억bps짜리 계획을 만든다 —
+  // 손절과 시간초과로만 빠져나오는, 기대값이 음수로 고정된 포지션이다.
+  const p = planEventTrade({ ...base, marketContext: { regime: 'neutral', multiplier: 1e9 }, grade: 'A', direction: 'bullish' });
+  assert.equal(p.executable, false);
+  assert.equal(p.side, null);
+  assert.match(p.reason, /배수/);
+});
+
+test('planEventTrade: 배수가 하한 미만이면 던지지 않고 매매하지 않는다', () => {
+  // 이 모듈의 원칙은 "매매 불가는 던지지 않고 noTrade로 돌려준다"다. 던지면
+  // 호출자가 넘긴 적도 없는 내부 파라미터명(takeProfitBps)이 에러로 새어 나온다.
+  for (const multiplier of [0.0001, 0, -1]) {
+    const p = planEventTrade({ ...base, marketContext: { regime: 'neutral', multiplier }, grade: 'A', direction: 'bullish' });
+    assert.equal(p.executable, false, `배수 ${multiplier}`);
+    assert.equal(p.side, null);
+    assert.match(p.reason, /배수/);
+  }
+});
+
+test('planEventTrade: 계획에는 판정된 시황을 그대로 실어 보낸다', () => {
+  // 사후에 "어떤 장에서 낸 주문인가"를 못 붙이면 체결 기록만으로는 검증이 불가능하다.
+  assert.equal(planEventTrade({ ...base, marketContext: RISK_ON, grade: 'A', direction: 'bullish' }).regime, 'risk_on');
+  assert.equal(planEventTrade({ ...base, marketContext: NEUTRAL, grade: 'A', direction: 'bullish' }).regime, 'neutral');
+  assert.equal(planEventTrade({ ...base, marketContext: RISK_OFF, grade: 'A', direction: 'bullish' }).regime, 'risk_off');
+});
+
+// ---- planEventTrade: 등급 키 ----
+
+test('planEventTrade: 등급은 대소문자를 가리지 않는다', () => {
+  const upper = planEventTrade({ ...base, grade: 'B', direction: 'bullish' });
+  const lower = planEventTrade({ ...base, grade: 'b', direction: 'bullish' });
+  assert.deepEqual(
+    [lower.takeProfitBps, lower.stopLossBps, lower.maxHoldSec, lower.executable],
+    [upper.takeProfitBps, upper.stopLossBps, upper.maxHoldSec, upper.executable]
+  );
+  assert.equal(planEventTrade({ ...base, grade: 'c', direction: 'bullish' }).executable, false);
+});
+
+test('planEventTrade: 문자열이 아닌 등급은 등급표를 인덱싱하지 못한다', () => {
+  for (const grade of [5, null, undefined, {}, ['S'], true]) {
+    const p = planEventTrade({ ...base, grade, direction: 'bullish' });
+    assert.equal(p.executable, false, `등급 ${JSON.stringify(grade)}`);
+    assert.equal(p.side, null);
+    assert.match(p.reason, /등급/);
+  }
+});
+
+test('planEventTrade: 프로토타입 속성 이름은 등급이 아니다', () => {
+  // 'constructor' in GRADE_PLAYBOOK 은 true다 — in은 프로토타입 체인까지 뒤진다.
+  // 지금은 toUpperCase()가 우연히 막아주고 있을 뿐이라, 표 조회 자체를 자기 속성으로 한정해야 한다.
+  for (const grade of ['constructor', 'toString', '__proto__', 'hasOwnProperty']) {
+    const p = planEventTrade({ ...base, grade, direction: 'bullish' });
+    assert.equal(p.executable, false, `등급 ${grade}`);
+    assert.equal(p.quantity, null);
+    assert.match(p.reason, /등급/);
+  }
+});
+
+// ---- planEventTrade: 비용 ----
+
+test('planEventTrade: 비용은 편도 수수료의 왕복(×2)으로 계산된다', () => {
+  // 왕복을 편도로 반만 세면 손익분기 승률이 실제보다 낮게 나온다 — 계획서상으로만
+  // 되는 매매가 만들어진다. 손익분기 승률 = (손절 + 왕복비용) / (익절 + 손절).
+  const a = planEventTrade({ ...base, feeBps: 8, grade: 'A', direction: 'bullish' });
+  near(a.breakevenWinRate, (150 + 8 * 2) / (300 + 150), '편도 8bps → 왕복 16bps');
+
+  const b = planEventTrade({ ...base, feeBps: 50, grade: 'A', direction: 'bullish' });
+  near(b.breakevenWinRate, (150 + 50 * 2) / (300 + 150), '편도 50bps → 왕복 100bps');
+
+  // 수수료가 오른 만큼 손익분기 승률도 정확히 그 두 배만큼 올라야 한다.
+  near(b.breakevenWinRate - a.breakevenWinRate, ((50 - 8) * 2) / (300 + 150));
+});
+
+test('planEventTrade: 왕복 비용을 감당 못 할 때 이유에 왕복 금액을 적는다', () => {
+  const p = planEventTrade({
+    ...base, marketContext: RISK_OFF, feeBps: 150, grade: 'B', direction: 'bullish',
+  });
+  assert.equal(p.executable, false);
+  assert.match(p.reason, /300bps/, '편도 150bps의 왕복은 300bps다');
+});
+
+test('planEventTrade: 수수료를 명시하지 않으면 무비용으로 가정하지 않는다', () => {
+  // 기본값 0은 "비용 없는 계획"을 만든다. 비용을 낙관적으로 가정한 계획은
+  // 실측과 어긋나 검증 자체를 무의미하게 만든다 — 이 저장소가 반복해 세운 원칙이다.
+  const { feeBps, ...noFee } = base;
+  assert.throws(
+    () => planEventTrade({ ...noFee, grade: 'B', direction: 'bullish' }),
+    /feeBps/
+  );
+});
+
+// ---- planEventTrade: 관문별 검증 ----
+
+test('planEventTrade: 음수 수수료는 event-plan의 관문에서 걸린다', () => {
+  // 예전 테스트는 RangeError만 봤다 — 이 관문을 지워도 planBracket이 대신 던져서
+  // 초록이었다. 어느 관문이 발동했는지 메시지로 확인해야 관문의 존재가 고정된다.
+  assert.throws(
+    () => planEventTrade({ ...base, feeBps: -1, grade: 'S', direction: 'bullish' }),
+    /feeBps/
+  );
+});
+
+test('planEventTrade: 최소 주문금액이 0 이하면 관문에서 걸린다', () => {
+  // 이 관문이 없으면 minNotionalKrw=0이 조용히 통과해 "최소 주문금액 미달" 판정이
+  // 영원히 뜨지 않는다 — 08-17 사고를 못 잡는 상태로 되돌아간다.
+  for (const minNotionalKrw of [0, -5, NaN]) {
+    assert.throws(
+      () => planEventTrade({ ...base, minNotionalKrw, grade: 'S', direction: 'bullish' }),
+      /minNotionalKrw/,
+      `minNotionalKrw ${minNotionalKrw}`
+    );
+  }
+});
+
+test('planEventTrade: 위험 비중 기본값은 1%다', () => {
+  // 자본 100만 × 1% = 위험 1만. S급 손절 200bps → 주당 손실 2원 → 5,000주 = 명목 50만.
+  const { riskPct, ...noRisk } = base;
+  const p = planEventTrade({ ...noRisk, grade: 'S', direction: 'bullish' });
+  near(p.quantity, 5000);
+  near(p.notional, 500000);
+  assert.equal(p.cappedByCapital, false, '기본값이 100%였다면 자본 한도에 걸린다');
+});
+
+test('planEventTrade: 최소 주문금액 기본값은 빗썸 기준 5,000원이다', () => {
+  const { minNotionalKrw, ...noMin } = base;
+  const p = planEventTrade({ ...noMin, capital: 100000, riskPct: 0.05, grade: 'S', direction: 'bullish' });
+  near(p.notional, 2500);
+  assert.equal(p.executable, false, '명목 2,500원은 기본 최소 주문금액 5,000원에 못 미친다');
+  assert.match(p.reason, /5,000원/);
+});
+
+// ---- planEventTrade: 최소명목 미달의 진단 ----
+//
+// 이 문자열의 존재 이유가 08-17 사고 재발 방지다. 조언이 틀리면 읽는 사람이
+// 엉뚱한 손잡이를 돌리게 되므로, 문구가 상황과 맞는지까지 테스트로 고정한다.
+
+test('planEventTrade: 위험 비중으로 해결되는 경우 필요한 비중을 숫자로 알려준다', () => {
+  // 명목 2,500원 → 5,000원이 되려면 위험 비중이 0.05%에서 0.10%로 두 배여야 한다.
+  const p = planEventTrade({
+    ...base, capital: 100000, riskPct: 0.05, grade: 'S', direction: 'bullish',
+  });
+  assert.equal(p.executable, false);
+  assert.match(p.reason, /최소 주문금액/);
+  assert.match(p.reason, /0\.10%/, '"올리세요"가 아니라 얼마로 올려야 하는지를 적는다');
+});
+
+test('planEventTrade: 자본 한도에 걸린 계획에는 위험 비중을 올리라고 하지 않는다', () => {
+  // 위험 비중이 이미 100%이고 명목이 자본 한도에 잘려 있다. 비중을 올려도
+  // 명목은 1원도 커지지 않는다 — 여기서 "비중을 올리세요"는 틀린 진단이다.
+  const p = planEventTrade({
+    ...base, capital: 1000, riskPct: 100, grade: 'S', direction: 'bullish',
+  });
+  assert.equal(p.executable, false);
+  assert.equal(p.cappedByCapital, true);
+  assert.doesNotMatch(p.reason, /위험 비중을 올리/, '틀린 손잡이를 돌리게 만드는 조언이다');
+  assert.doesNotMatch(p.reason, /위험 비중을 [\d.]+% 이상으로 올리/);
+  assert.match(p.reason, /자본/);
+});
+
+test('planEventTrade: 위험 비중 상한으로도 못 넘으면 필요한 자본을 알려준다', () => {
+  // 자본 50원. 비중을 100%까지 올려도 명목이 5,000원에 닿지 않는다.
+  const p = planEventTrade({
+    ...base, capital: 50, riskPct: 1, grade: 'S', direction: 'bullish',
+  });
+  assert.equal(p.executable, false);
+  assert.equal(p.cappedByCapital, false, '이 조합은 자본 한도에 걸리기 전에 최소명목에서 막힌다');
+  assert.match(p.reason, /100%/);
+  assert.match(p.reason, /10,000원/, '필요한 자본을 계산해서 적는다');
+});
+
+// ---- 기록: risk_off 배수의 함정 ----
+
+test('planEventTrade: risk_off는 익절만 좁혀 손익분기 승률을 올린다 (구조적 손익비 악화)', () => {
+  // 배수는 익절에만 곱하고 손절·수량은 그대로 두므로, risk_off는 "덜 먹히는 장에서
+  // 더 자주 맞아야 본전인 규칙"이 된다. 의도된 사양이지만 값을 조정할 사람이
+  // 반드시 알아야 하는 함정이라 숫자로 남긴다.
+  const flat = planEventTrade({ ...base, marketContext: NEUTRAL, grade: 'B', direction: 'bullish' });
+  const off = planEventTrade({ ...base, marketContext: RISK_OFF, grade: 'B', direction: 'bullish' });
+
+  assert.equal(off.stopLossBps, flat.stopLossBps, '손절은 그대로다');
+  near(off.quantity, flat.quantity, '수량도 그대로다');
+  near(flat.breakevenWinRate, 0.464); // (100 + 16) / (150 + 100)
+  near(off.breakevenWinRate, 116 / 205); // (100 + 16) / (105 + 100) ≈ 56.6%
+  assert.ok(off.breakevenWinRate > flat.breakevenWinRate, 'risk_off가 요구 승률을 10%p 넘게 올린다');
 });
