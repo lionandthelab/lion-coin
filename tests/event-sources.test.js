@@ -15,6 +15,7 @@ const {
   fetchBithumbNotices,
   fetchRss,
   dedupeNewEvents,
+  filterFreshEvents,
   hasUsableTime,
 } = require('../src/event-sources');
 
@@ -380,4 +381,59 @@ test('fetch 래퍼는 HTTP 오류를 빈 배열로 삼키지 않는다', async (
   await assert.rejects(() => fetchBithumbNotices({ fetchImpl }), /503/);
   await assert.rejects(() => fetchRss({ url: 'https://x.test/feed', source: 'tokenpost', fetchImpl }), /503/);
   await assert.rejects(() => fetchRss({ source: 'tokenpost', fetchImpl }), /url/);
+});
+
+// ---- 신선도 필터 ----
+//
+// 실제로 있었던 사고(2026-08-21): 감시 모드를 켜자마자 27일 전(646시간) 공지까지
+// 전부 "새 재료"로 수집됐다. 폴링 첫 회에는 seenIds가 비어 있어 응답 전체가 신규로
+// 잡히기 때문이다. 이 상태로 실거래를 켰다면 **이미 다 반영된 옛 뉴스를 재료로 믿고
+// 정확히 고점을 샀을 것이다.**
+//
+// 유목민식 매매의 전제는 "아직 시장에 퍼지지 않은 재료"다. 나이 제한이 없으면
+// 그 전제가 무너진다. 중복 제거만으로는 막을 수 없다 — 처음 보는 것은 맞기 때문이다.
+
+test('filterFreshEvents: 기준보다 오래된 재료를 걸러낸다', () => {
+  const now = 1_000_000_000;
+  const { fresh, stale } = filterFreshEvents(
+    [
+      { id: 'a', at: now - 60_000 },        // 1분 전
+      { id: 'b', at: now - 20 * 60_000 },   // 20분 전
+    ],
+    { maxAgeMs: 10 * 60_000, now }
+  );
+  assert.deepEqual(fresh.map((e) => e.id), ['a']);
+  assert.deepEqual(stale.map((e) => e.id), ['b'], '버리지 않고 돌려준다 — 화면에는 보여야 한다');
+});
+
+test('filterFreshEvents: 경계값은 포함한다', () => {
+  const now = 1_000_000_000;
+  const { fresh } = filterFreshEvents([{ id: 'a', at: now - 10 * 60_000 }], { maxAgeMs: 10 * 60_000, now });
+  assert.equal(fresh.length, 1);
+});
+
+test('filterFreshEvents: 미래 시각도 신선한 것으로 본다', () => {
+  // 거래소 서버와 시계가 몇 초 어긋날 수 있다. 미래라고 버리면 방금 나온 공지를 놓친다.
+  const now = 1_000_000_000;
+  const { fresh } = filterFreshEvents([{ id: 'a', at: now + 5_000 }], { maxAgeMs: 60_000, now });
+  assert.equal(fresh.length, 1);
+});
+
+test('filterFreshEvents: 시각을 모르는 재료는 신선하지 않은 쪽으로 본다', () => {
+  // 시각 파싱에 실패한 항목을 매매에 쓰면 언제 나온 재료인지 모른 채 진입하게 된다.
+  const now = 1_000_000_000;
+  const { fresh, stale } = filterFreshEvents([{ id: 'a', at: null }], { maxAgeMs: 60_000, now });
+  assert.equal(fresh.length, 0);
+  assert.equal(stale.length, 1);
+});
+
+test('filterFreshEvents: 빈 배열과 잘못된 입력을 안전하게 처리한다', () => {
+  const now = 1_000_000_000;
+  assert.deepEqual(filterFreshEvents([], { maxAgeMs: 1000, now }).fresh, []);
+  assert.throws(() => filterFreshEvents(null, { maxAgeMs: 1000, now }), /배열/);
+});
+
+test('filterFreshEvents: maxAgeMs가 양수가 아니면 거부한다', () => {
+  assert.throws(() => filterFreshEvents([], { maxAgeMs: 0, now: 1 }), /maxAgeMs/);
+  assert.throws(() => filterFreshEvents([], { maxAgeMs: -1, now: 1 }), /maxAgeMs/);
 });
