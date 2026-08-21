@@ -210,6 +210,46 @@ test('formatEntryAlert: plan이 없거나 진입가가 없으면 TypeError', () 
   assert.throws(() => formatEntryAlert({ symbol: 'AAA', plan: { notional: 10000 } }), TypeError);
 });
 
+test('formatEntryAlert: 모의 매매면 첫 줄에서 그 사실이 드러난다', () => {
+  // 모의와 실거래 알림이 똑같이 생기면, 종이 체결을 실제 체결로 읽고 뛰어들거나
+  // 실제 체결을 종이로 읽고 방치한다. 둘 다 돈이 걸린 오독이다.
+  const out = formatEntryAlert({
+    symbol: 'NEXO',
+    plan: { entryPrice: 1234, notional: 7800, takeProfitBps: 500, stopLossBps: 200 },
+    simulated: true,
+  });
+  const first = out.split('\n')[0];
+  assert.ok(first.startsWith('💰'), '종류 표식은 여전히 첫 글자여야 한다');
+  assert.match(first, /모의/);
+});
+
+test('formatEntryAlert: 실거래에는 모의 표시를 붙이지 않는다', () => {
+  const live = formatEntryAlert({
+    symbol: 'NEXO',
+    plan: { entryPrice: 1234, notional: 7800, takeProfitBps: 500, stopLossBps: 200 },
+    simulated: false,
+  });
+  assert.ok(!live.includes('모의'), live);
+  const omitted = formatEntryAlert({ symbol: 'NEXO', plan: { entryPrice: 1234, notional: 7800 } });
+  assert.ok(!omitted.includes('모의'), omitted);
+});
+
+test('formatExitAlert: 모의 매매면 첫 줄에서 그 사실이 드러난다', () => {
+  const out = formatExitAlert({
+    symbol: 'NEXO', outcome: 'take_profit', returnBps: 312, holdSec: 252, pnlKrw: 24, simulated: true,
+  });
+  const first = out.split('\n')[0];
+  assert.ok(first.startsWith('✅'), first);
+  assert.match(first, /모의/);
+  // 손익금 괄호와 모의 표시가 뒤섞여 읽히면 안 된다.
+  assert.match(first, /\(\+24원\).*모의/);
+});
+
+test('formatExitAlert: 실거래에는 모의 표시를 붙이지 않는다', () => {
+  const out = formatExitAlert({ symbol: 'NEXO', outcome: 'stop_loss', returnBps: -200, holdSec: 61, simulated: false });
+  assert.ok(!out.includes('모의'), out);
+});
+
 test('formatEntryAlert: plan에 섞여 들어온 토큰은 출력되지 않는다', () => {
   const out = formatEntryAlert({
     symbol: 'AAA',
