@@ -337,7 +337,22 @@ async function priceTick() {
   }
   if (state.status !== 'HOLDING' && state.status !== 'EXITING') return;
   const symbol = state.material && state.material.tickers ? state.material.tickers[0] : null;
-  if (!symbol || !state.entryPrice) return;
+  // 조용히 돌아가면 포지션이 감시도 청산도 못 받고 기록조차 남지 않는다 —
+  // 이 저장소가 가장 여러 번 당한 실패 방식이다. 도달하면 안 되는 자리이므로
+  // 도달했다는 사실 자체를 남긴다.
+  if (!symbol || !state.entryPrice) {
+    if (Date.now() - lastOrphanWarnAt > ORPHAN_WARN_MS) {
+      lastOrphanWarnAt = Date.now();
+      const what = !symbol ? '청산할 종목을 읽지 못했습니다' : '진입가가 없습니다';
+      recordError(`${state.status} 포지션을 감시할 수 없습니다 — ${what}`);
+      await notify(telegram.formatHaltAlert({
+        reason: `${state.status} 포지션을 감시할 수 없습니다 — ${what}\n`
+          + `수량 ${state.quantity} · 진입가 ${state.entryPrice}\n`
+          + '⚠ 익절·손절이 돌지 않습니다. 거래소에서 직접 확인하세요.',
+      }));
+    }
+    return;
+  }
 
   let price;
   try {
