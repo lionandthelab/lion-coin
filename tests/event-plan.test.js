@@ -1,7 +1,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 
-const { GRADE_PLAYBOOK, assessMarketContext, planEventTrade } = require('../src/event-plan');
+const { GRADE_PLAYBOOK, MULTIPLIERS, assessMarketContext, planEventTrade } = require('../src/event-plan');
 
 const near = (a, b, msg) =>
   assert.ok(Math.abs(a - b) < 1e-9, `${msg ?? ''} — got ${a}, want ${b}`);
@@ -319,6 +319,16 @@ test('planEventTrade: 배수가 하한 미만이면 던지지 않고 매매하�
     assert.equal(p.executable, false, `배수 ${multiplier}`);
     assert.equal(p.side, null);
     assert.match(p.reason, /배수/);
+  }
+});
+
+test('planEventTrade: 실제로 쓰는 배수는 모두 허용 범위 안이다', () => {
+  // 배수 범위 검증은 손상된 시황을 막으려고 넣은 것이지 정상 시황을 막으려는 게
+  // 아니다. MULTIPLIERS를 범위 밖으로 키우면 그 국면의 매매가 통째로, 그것도
+  // "시황 판정이 손상됐다"는 엉뚱한 이유로 조용히 멈춘다.
+  for (const [regime, multiplier] of Object.entries(MULTIPLIERS)) {
+    const p = planEventTrade({ ...base, marketContext: { regime, multiplier }, grade: 'A', direction: 'bullish' });
+    assert.equal(p.executable, true, `${regime} 배수 ${multiplier}가 범위 밖이다`);
   }
 });
 
