@@ -72,7 +72,10 @@ let tgLastSentAt = null;
 // 손절로 나왔는데 그 뒤 반등했다면 손절이 좁았던 것이고, 익절로 나왔는데 그 뒤 더 갔다면
 // 익절이 빨랐던 것이다. 청산 시점의 손익만 보면 이 둘을 구별할 수 없다.
 const postExits = new Map();   // 'SYM@진입시각' → {symbol, until, highest, lowest}
-const IMPROVE_DIR = path.join(__dirname, '..', 'harness', 'improve');
+// 상태 저장 위치. 테스트가 실제 운영 상태를 덮어쓰지 않도록 환경변수로 옮길 수 있다 —
+// 이 디렉터리의 파일들이 배포 게이트·복기·롤백 판정의 입력이라, 테스트가 남긴
+// 가짜 거래 한 줄이 그대로 근거로 쓰인다.
+const IMPROVE_DIR = process.env.EVENT_STATE_DIR || path.join(__dirname, '..', 'harness', 'improve');
 const TRADE_LOG = path.join(IMPROVE_DIR, 'trade-log.jsonl');
 
 function kstDate(ms = Date.now()) {
