@@ -90,6 +90,8 @@ function createEventState() {
     // 같은 사유로 계속 실패하는 포지션은 사람이 봐야 한다.
     lastExitError: null,
     lastExitFailedAt: null,
+    // 연속 실패 횟수. 상한을 넘으면 재시도는 계속하되 사람을 부른다.
+    exitFailCount: 0,
     haltReason: null,
     lastTrade: null,
   };
@@ -264,6 +266,10 @@ function onPriceTick(state, { price, low, high, now } = {}) {
 // 청산 주문이 **나가지 못했을 때**. 청산 지시와 주문 성공은 다른 사건인데 이
 // 구분이 없으면 상태 기계는 EXITING인 채로 "이미 나갔다"고 믿고, 아무도 보지
 // 않는 포지션이 남는다. 저장소의 유일한 halt 호출처가 정확히 이 상황이다.
+// 이만큼 연속 실패하면 사람을 부른다. 재시도를 멈추는 값이 아니다 —
+// 재시도는 계속되고 알림의 성격만 바뀐다.
+const MAX_EXIT_RETRIES = 3;
+
 function onExitFailed(state, { reason = null, now } = {}) {
   const at = now === undefined ? null : toEpochMs(now, 'now');
   const failure = reason == null ? '청산 주문 실패' : String(reason);
@@ -271,6 +277,13 @@ function onExitFailed(state, { reason = null, now } = {}) {
   if (state.status === STATES.EXITING) {
     // HOLDING으로 되돌린다. 그래야 다음 틱이 같은 조건을 다시 판정해 청산을
     // 재시도한다 — 손절·시간초과 조건은 사라진 게 아니라 그대로 남아 있다.
+    //
+    // **재시도에 상한을 두지 않는다.** 포기하는 순간 포지션은 아무도 보지 않는
+    // 고아가 되고, 그게 이 함수가 막으려던 바로 그 상태다. 대신 몇 번 연속으로
+    // 실패하면 사람을 부른다 — 거래소가 계속 거절하는데 조용히 도는 것은
+    // 고아가 되는 것과 결과가 같다. 한 번의 일시적 5xx로 깨우지는 않는다.
+    // 그런 알림은 곧 무시되고, 무시되는 알림은 없는 알림이다.
+    const fails = (state.exitFailCount || 0) + 1;
     return {
       state: {
         ...state,
@@ -279,11 +292,14 @@ function onExitFailed(state, { reason = null, now } = {}) {
         exitOrderedAt: null,
         lastExitError: failure,
         lastExitFailedAt: at,
+        exitFailCount: fails,
       },
       action: {
         type: 'notify',
-        reason: 'exit_retry',
+        reason: fails >= MAX_EXIT_RETRIES ? 'exit_retry_exhausted' : 'exit_retry',
+        ...(fails >= MAX_EXIT_RETRIES ? { needsManualIntervention: true } : {}),
         detail: failure,
+        failCount: fails,
         quantity: state.quantity,
         entryPrice: state.entryPrice,
         event: state.event,
@@ -418,5 +434,6 @@ module.exports = {
   onFillConfirmed,
   onExitConfirmed,
   onExitFailed,
+  MAX_EXIT_RETRIES,
   halt,
 };

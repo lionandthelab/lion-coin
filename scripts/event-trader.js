@@ -304,7 +304,25 @@ async function trackPostExits() {
   }
 }
 
+// 중단된 채로 수량을 들고 있으면 어떤 감시도 받지 않는다 — 정확히 고아 상태다.
+// 상태 기계는 HALTED에서 틱을 판정하지 않는 것이 옳고(중단은 사람이 풀어야 한다),
+// 그래서 침묵을 깨는 일은 데몬 몫이다.
+let lastOrphanWarnAt = 0;
+const ORPHAN_WARN_MS = 10 * 60 * 1000;
+
 async function priceTick() {
+  if (state.status === 'HALTED' && state.quantity != null) {
+    if (Date.now() - lastOrphanWarnAt > ORPHAN_WARN_MS) {
+      lastOrphanWarnAt = Date.now();
+      const sym = state.material && state.material.tickers ? state.material.tickers[0] : '?';
+      await notify(telegram.formatHaltAlert({
+        reason: `중단 상태에서 포지션이 남아 있습니다 — ${sym} 수량 ${state.quantity} · 진입가 ${state.entryPrice}\n`
+          + `사유: ${state.haltReason || '알 수 없음'}\n`
+          + '⚠ 자동 청산이 돌지 않습니다. 거래소에서 직접 처리하세요.',
+      }));
+    }
+    return;
+  }
   if (state.status !== 'HOLDING' && state.status !== 'EXITING') return;
   const symbol = state.material && state.material.tickers ? state.material.tickers[0] : null;
   if (!symbol || !state.entryPrice) return;
@@ -332,8 +350,21 @@ async function priceTick() {
       await trade.placeOrder(trade.buildExitOrder({ symbol, volume: quantity, ordType: 'market' }));
     } catch (err) {
       recordError(`청산 실패 ${symbol}: ${err.message}`);
-      await notify(telegram.formatHaltAlert({ reason: `청산 실패 ${symbol}: ${err.message}` }));
-      state = fsm.halt(state, '청산 실패').state;
+      // **중단하지 않는다.** halt하면 포지션은 HALTED에 수량을 든 채 굳고
+      // 다음 틱이 판정하지 않아 아무도 보지 않는 고아가 된다. 청산 조건은
+      // 사라진 게 아니라 그대로 남아 있으므로 HOLDING으로 되돌려 재시도한다.
+      const r2 = fsm.onExitFailed(state, { reason: err.message, now: Date.now() });
+      state = r2.state;
+      const a = r2.action || {};
+      // 연속 실패가 상한을 넘으면 알림의 성격이 바뀐다 — 재시도는 계속되지만
+      // 거래소가 계속 거절하는 것은 사람이 손으로 나와야 하는 상황이다.
+      if (a.needsManualIntervention) {
+        await notify(telegram.formatHaltAlert({
+          reason: `청산 ${a.failCount}회 연속 실패 ${symbol}: ${err.message}\n`
+            + `수량 ${a.quantity} · 진입가 ${a.entryPrice}\n`
+            + '⚠ 재시도는 계속됩니다. 거래소에서 직접 청산해야 할 수 있습니다.',
+        }));
+      }
       return;
     }
   }
