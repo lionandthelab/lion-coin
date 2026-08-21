@@ -84,6 +84,39 @@ test('parseTickerAll: date 키는 마켓이 아니므로 제외한다', () => {
   assert.deepEqual(out.map((x) => x.symbol), ['BTC']);
 });
 
+// 24시간 변동률은 시황 판정의 유일한 입력이다. 파서가 이 필드를 버리면
+// 시황 층은 **입력 없이 돌아간다** — 그리고 호출자가 없는 값을 0으로 채우고
+// 있었기 때문에, 데몬은 켜진 내내 조작된 시황으로 익절폭을 정하고 있었다.
+// (2026-08-22 발견. 실제로는 상승 종목 0건 → 시장폭 0% → 영구 risk_off였다.)
+test('parseTickerAll: 24시간 변동률을 소수 비율로 낸다', () => {
+  const out = parseTickerAll({
+    status: '0000',
+    data: {
+      BTC: { closing_price: '107288000', acc_trade_value_24H: '5', fluctate_rate_24H: '6.96' },
+      DOGE: { closing_price: '150', acc_trade_value_24H: '1', fluctate_rate_24H: '-3.5' },
+    },
+  });
+  const btc = out.find((x) => x.symbol === 'BTC');
+  const doge = out.find((x) => x.symbol === 'DOGE');
+  // 응답은 퍼센트("6.96")고 소비자는 소수 비율을 기대한다(×10000 하면 bps).
+  assert.ok(Math.abs(btc.changeRate - 0.0696) < 1e-12, `실제 ${btc.changeRate}`);
+  assert.ok(Math.abs(doge.changeRate - (-0.035)) < 1e-12, `실제 ${doge.changeRate}`);
+});
+
+test('parseTickerAll: 변동률이 없으면 0으로 위장하지 않는다', () => {
+  // 0은 "변동 없음"이라는 확정된 관측이다. 그 값이 시장폭 계산에 들어가면
+  // 하락으로 세어지고, 시황은 조용히 risk_off로 기운다.
+  const out = parseTickerAll({
+    status: '0000',
+    data: {
+      A: { closing_price: '1', acc_trade_value_24H: '9' },
+      B: { closing_price: '1', acc_trade_value_24H: '8', fluctate_rate_24H: '' },
+      C: { closing_price: '1', acc_trade_value_24H: '7', fluctate_rate_24H: 'nope' },
+    },
+  });
+  for (const row of out) assert.equal(row.changeRate, null, row.symbol);
+});
+
 test('parseTickerAll: status가 0000이 아니면 Error (조용히 빈 목록을 돌려주지 않는다)', () => {
   assert.throws(() => parseTickerAll({ status: '5600', message: '오류' }), /5600/);
 });
