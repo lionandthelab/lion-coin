@@ -107,6 +107,41 @@ test('formatEventAlert: 티커는 실제로 주문이 나가는 자리(material.
   assert.ok(!first.includes('WRONG'), first);
 });
 
+// H1 잔여: **가장 중요한 재료가 정확히 종목명 없이 나간다.**
+// 신규 상장·상장폐지 종목은 정의상 거래소 목록(knownSymbols)에 없다. 그래서
+// tickers는 비고 candidateTickers만 채워진다 — S급 재료 전부가 이 경로다.
+test('formatEventAlert: 거래 불가 종목도 candidateTickers로 이름을 낸다', () => {
+  const event = {
+    id: 'upbit:6530', source: 'upbit', at: REAL_AT_EPOCH,
+    title: '소파이(SOPH) KRW 마켓 디지털 자산 추가', category: '거래',
+    url: null, updatedAt: null,
+  };
+  // 신규 상장이므로 SOPH는 아직 거래소 목록에 없다 — 실전 조건 그대로다.
+  const material = classifyMaterial({
+    title: event.title, category: event.category, source: event.source,
+    knownSymbols: ['BTC', 'ETH'],
+  });
+  assert.equal(material.grade, 'S');
+  assert.deepEqual(material.tickers, [], '거래 가능 티커는 없는 것이 정상이다');
+  assert.deepEqual(material.candidateTickers, ['SOPH'], '분별기는 대상을 알고 있다');
+
+  const first = formatEventAlert({ event, material }).split('\n')[0];
+  assert.match(first, /SOPH/, `S급 상장 알림 첫 줄에 종목이 없다: ${first}`);
+});
+
+test('formatEventAlert: 거래 가능한 티커가 있으면 후보보다 우선한다', () => {
+  // 폴백이 주문 대상을 가려서는 안 된다. 주문은 tickers[0]으로 나간다.
+  const first = formatEventAlert({
+    event: { title: REAL_TITLE, source: 'upbit' },
+    material: {
+      grade: 'S', kind: '원화상장', direction: 'bullish',
+      tickers: ['NEXO'], candidateTickers: ['WRONG'],
+    },
+  }).split('\n')[0];
+  assert.match(first, /NEXO/, first);
+  assert.ok(!first.includes('WRONG'), first);
+});
+
 test('formatEventAlert: 제목·출처·시각 줄을 만든다', () => {
   const out = formatEventAlert({
     event: { symbol: 'NEXO', title: REAL_TITLE, source: '업비트 공지', at: REAL_AT_KST },
