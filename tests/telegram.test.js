@@ -10,6 +10,7 @@ const {
   buildSendUrl,
   sendMessage,
 } = require('../src/telegram');
+const { classifyMaterial } = require('../src/material');
 
 // 알림은 **판단을 대신 내려주지 않는다** — 휴대폰 잠금화면에서 3초 안에
 // "지금 봐야 하나"를 가르는 것이 전부다. 그래서 이 테스트가 못박는 것은 두 가지다.
@@ -28,6 +29,9 @@ const {
 const REAL_TITLE = '넥소(NEXO) 신규 거래지원 안내 (USDT 마켓) (거래지원 개시 시점 변경 안내)';
 const REAL_AT_KST = '2026-08-21T21:50:05+09:00'; // 업비트 listed_at
 const REAL_AT_SPACE = '2026-08-21 19:00:00'; // 빗썸 published_at (오프셋 없음, KST)
+// event-sources.js가 정규화해 내보내는 실제 값. 프로덕션 알림은 100% 이 타입이다.
+const REAL_AT_EPOCH = 1787307565000; // upbit:6496의 at — 19:19:25 KST
+const REAL_BITHUMB_AT_EPOCH = 1787299200000; // bithumb:1654570의 at — 19:00:00 KST
 
 const FAKE_TOKEN = '1234567890:AAH-fake_TOKEN_value_do_not_leak_xyz';
 
@@ -53,18 +57,56 @@ const okResponse = (body = { ok: true, result: { message_id: 7 } }) => ({
 test('formatEventAlert: 첫 줄에 등급·종류·심볼이 오고 급별 이모지가 붙는다', () => {
   const out = formatEventAlert({
     event: { symbol: 'NEXO', title: REAL_TITLE, source: '업비트 공지', at: REAL_AT_KST },
-    material: { grade: 'S', kind: '호재' },
+    material: { grade: 'S', kind: '호재', direction: 'bullish' },
   });
   const first = out.split('\n')[0];
   assert.ok(first.startsWith('🔥'), `첫 줄: ${first}`);
-  assert.match(first, /\[S급 호재\]/);
+  assert.match(first, /S급/);
+  assert.match(first, /호재/);
   assert.match(first, /NEXO/);
+});
+
+// H1 재현: 실제 파이프라인이 넘기는 이벤트에는 symbol이 없다.
+// event-sources.js의 EVENT_KEYS는 id·source·at·title·category·url·updatedAt 뿐이고,
+// event-trader.js는 그 정규화 이벤트를 그대로 넘긴다. 종목을 아는 쪽은 분류기다.
+// 첫 줄에서 종목을 못 가리면 "3초 판단"이 재료 알림에서만 깨진다.
+test('formatEventAlert: 정규화 이벤트(symbol 없음)에서도 material.tickers로 티커를 낸다', () => {
+  const event = {
+    id: 'upbit:6496',
+    source: 'upbit',
+    at: REAL_AT_EPOCH,
+    title: REAL_TITLE,
+    category: '거래',
+    url: 'https://upbit.com/service_center/notice?id=6496',
+    updatedAt: null,
+  };
+  const material = classifyMaterial({
+    title: event.title,
+    category: event.category,
+    source: event.source,
+    knownSymbols: ['NEXO', 'BTC', 'USDT'],
+  });
+  assert.deepEqual(material.tickers, ['NEXO'], '분류기가 티커를 찾아 두었는지 먼저 확인');
+
+  const first = formatEventAlert({ event, material }).split('\n')[0];
+  assert.match(first, /NEXO/, `첫 줄에 티커가 없다: ${first}`);
+});
+
+test('formatEventAlert: 티커는 실제로 주문이 나가는 자리(material.tickers[0])를 따른다', () => {
+  // event-trader.js의 tryEnter는 m.tickers[0]으로 진입한다. 알림이 가리키는 종목과
+  // 주문이 나가는 종목이 어긋나면 사람이 엉뚱한 차트를 보게 된다.
+  const first = formatEventAlert({
+    event: { symbol: 'WRONG', title: REAL_TITLE, source: 'upbit' },
+    material: { grade: 'S', kind: '원화상장', direction: 'bullish', tickers: ['NEXO', 'BTC'] },
+  }).split('\n')[0];
+  assert.match(first, /NEXO/, first);
+  assert.ok(!first.includes('WRONG'), first);
 });
 
 test('formatEventAlert: 제목·출처·시각 줄을 만든다', () => {
   const out = formatEventAlert({
     event: { symbol: 'NEXO', title: REAL_TITLE, source: '업비트 공지', at: REAL_AT_KST },
-    material: { grade: 'S', kind: '호재' },
+    material: { grade: 'S', kind: '호재', direction: 'bullish' },
   });
   const lines = out.split('\n');
   assert.equal(lines[1], REAL_TITLE);
@@ -118,9 +160,101 @@ test('formatEventAlert: 등급이 없으면 등급미상으로 표시하고 던�
   assert.match(out, /등급미상/);
 });
 
-test('formatEventAlert: 제목이 없으면 TypeError', () => {
-  assert.throws(() => formatEventAlert({ event: { symbol: 'AAA' }, material: { grade: 'S' } }), TypeError);
-  assert.throws(() => formatEventAlert({ material: { grade: 'S' } }), TypeError);
+// H2 재현: 제목이 비면 던지는 게 아니라 대체 문구로 알려야 한다.
+// event-sources.js는 제목이 문자열이 아니면 의도적으로 ''로 정규화하고,
+// classifyMaterial은 빈 제목이어도 카테고리 폴백('거래유의')으로 S급을 준다.
+// event-trader.js에서 포맷 호출은 notify()의 **인자**라 notify의 try/catch 밖에서
+// 평가되므로, 여기서 던지면 TypeError가 pollOnce를 뚫고 나가 폴링 배치가 통째로
+// 중단된다 — 남은 재료까지 전부 버려진다. 이 모듈 자신이 formatHaltAlert에서
+// "던지면 최악의 순간에 침묵한다"는 정반대 정책을 이미 세워 두었다.
+test('formatEventAlert: 제목이 비어도 던지지 않고 대체 문구를 낸다', () => {
+  for (const title of [undefined, '', '   ', null, 123]) {
+    const out = formatEventAlert({ event: { symbol: 'AAA', title }, material: { grade: 'S', direction: 'bearish' } });
+    const lines = out.split('\n');
+    assert.match(lines[0], /AAA/, lines[0]);
+    assert.ok(lines[1] && lines[1].trim(), `제목 줄이 비었다: ${JSON.stringify(out)}`);
+    assert.match(lines[1], /제목/, lines[1]);
+  }
+  assert.doesNotThrow(() => formatEventAlert({ material: { grade: 'S' } }));
+  assert.doesNotThrow(() => formatEventAlert());
+});
+
+test('formatEventAlert: 제목 하나가 비어도 폴링 배치의 나머지 재료를 버리지 않는다', () => {
+  // 실제 빗썸 페이로드 5건 중 첫 건의 title만 지운 재현. 던지면 0건 처리 후 중단된다.
+  const batch = [
+    { source: 'bithumb', title: '', category: '거래유의', at: REAL_BITHUMB_AT_EPOCH },
+    { source: 'bithumb', title: '만트라(MANTRA), 바운스빗(BB), 갈라(GALA), 썬도그(SUNDOG) 거래유의종목 지정', category: '거래유의', at: REAL_BITHUMB_AT_EPOCH },
+    { source: 'bithumb', title: '메가이더(MEGA) 입출금 일시 중지 안내 (08/25 09:00 ~)', category: '입출금', at: REAL_BITHUMB_AT_EPOCH },
+  ];
+  const sent = [];
+  for (const event of batch) {
+    const material = classifyMaterial({
+      title: event.title, category: event.category, source: event.source,
+      knownSymbols: ['MANTRA', 'BB', 'GALA', 'SUNDOG', 'MEGA'],
+    });
+    if (!material.grade) continue;
+    sent.push(formatEventAlert({ event, material })); // notify()의 인자 = try/catch 밖
+  }
+  assert.equal(sent.length, 3, `배치가 중단됐다: ${sent.length}건만 처리`);
+});
+
+// H3 재현: 악재에 🔥가 붙으면 잠금화면에서 호재와 구별되지 않아 정확히 반대로 행동한다.
+test('formatEventAlert: 악재는 호재와 다른 표식을 쓴다', () => {
+  const bearish = formatEventAlert({
+    event: { title: '만트라(MANTRA) 거래 유의 종목 지정 안내', source: 'upbit', at: REAL_AT_EPOCH },
+    material: { grade: 'S', kind: '거래유의', direction: 'bearish', tickers: ['MANTRA'] },
+  });
+  const bullish = formatEventAlert({
+    event: { title: '커브(CRV) KRW, USDT 마켓 디지털 자산 추가', source: 'upbit', at: REAL_AT_EPOCH },
+    material: { grade: 'S', kind: '원화상장', direction: 'bullish', tickers: ['CRV'] },
+  });
+  assert.notEqual(bearish[0], bullish[0], `같은 S급이어도 방향이 다르면 표식이 달라야 한다: ${bearish[0]}`);
+  assert.ok(!bearish.startsWith('🔥'), `악재에 호재 표식: ${bearish.split('\n')[0]}`);
+  assert.ok(bullish.startsWith('🔥'), bullish.split('\n')[0]);
+  // 이모지가 죽는 환경(일부 잠금화면·이메일 게이트웨이)에서도 방향이 남아야 한다.
+  assert.match(bearish.split('\n')[0], /▼/, bearish.split('\n')[0]);
+  assert.match(bullish.split('\n')[0], /▲/, bullish.split('\n')[0]);
+});
+
+test('formatEventAlert: 방향을 모르면 호재 표식으로 위장하지 않는다', () => {
+  const out = formatEventAlert({ event: { title: '분류 실패한 공지' }, material: { grade: 'S', kind: '기타' } });
+  assert.ok(!out.startsWith('🔥'), out);
+});
+
+test('formatEventAlert: 실제 분류기 출력에서 악재와 호재의 첫 글자가 갈린다', () => {
+  const known = ['MANTRA', 'BB', 'GALA', 'SUNDOG', 'CRV'];
+  const bad = classifyMaterial({
+    title: '만트라(MANTRA), 바운스빗(BB), 갈라(GALA), 썬도그(SUNDOG) 거래유의종목 지정',
+    category: '거래유의', source: 'bithumb', knownSymbols: known,
+  });
+  const good = classifyMaterial({
+    title: '커브(CRV) KRW, USDT 마켓 디지털 자산 추가', category: '거래', source: 'upbit', knownSymbols: known,
+  });
+  assert.equal(bad.direction, 'bearish');
+  assert.equal(good.direction, 'bullish');
+  assert.equal(bad.grade, good.grade, '둘 다 S급이라 등급만으로는 구별되지 않는다');
+
+  const badLine = formatEventAlert({ event: { title: 'x', source: 'bithumb' }, material: bad }).split('\n')[0];
+  const goodLine = formatEventAlert({ event: { title: 'y', source: 'upbit' }, material: good }).split('\n')[0];
+  assert.notEqual(badLine[0], goodLine[0], `${badLine} / ${goodLine}`);
+});
+
+// M5 재현: event-sources.js는 at을 epoch ms 숫자로 내보내므로 프로덕션 알림은
+// 100% 이 분기를 탄다. 그런데 기존 테스트에는 숫자 at이 하나도 없었다.
+test('formatEventAlert: epoch ms 숫자 at을 KST 시:분:초로 읽는다', () => {
+  const out = formatEventAlert({
+    event: { title: REAL_TITLE, source: 'upbit', at: REAL_AT_EPOCH },
+    material: { grade: 'S', kind: '원화상장', direction: 'bullish', tickers: ['NEXO'] },
+  });
+  assert.match(out, /출처: upbit · 19:19:25/, out);
+});
+
+test('formatEventAlert: 숫자 at이 NaN이면 시각 줄을 지어내지 않는다', () => {
+  const out = formatEventAlert({
+    event: { title: REAL_TITLE, at: Number.NaN },
+    material: { grade: 'S', kind: '원화상장', direction: 'bullish', tickers: ['NEXO'] },
+  });
+  assert.ok(!out.includes('출처'), out);
 });
 
 test('formatEventAlert: 원본 페이로드 필드명(pc_url·published_at)도 읽는다', () => {
@@ -324,13 +458,40 @@ test('formatHaltAlert: 사유가 없어도 던지지 않는다', () => {
   assert.match(out, /미상/);
 });
 
+// M6 재현: 포맷 함수 중 formatHaltAlert만 임의 문자열을 그대로 통과시킨다.
+// 중단 사유는 event-trader.js에서 `청산 실패 ${symbol}: ${err.message}`로 조립되는데,
+// 그 err가 요청 URL을 message에 담고 있으면 경로의 /bot<token>/이 알림과 로그에 남는다.
+test('formatHaltAlert: 사유에 섞여 들어온 봇 토큰은 출력되지 않는다', () => {
+  const leaky = `청산 실패 NEXO: request to https://api.telegram.org/bot${FAKE_TOKEN}/sendMessage failed`;
+  const out = formatHaltAlert({ reason: leaky });
+  assert.ok(!out.includes(FAKE_TOKEN), `토큰 유출: ${out}`);
+  assert.ok(!out.includes('AAH-fake'), `토큰 유출: ${out}`);
+  // 알림 자체는 반드시 나가야 한다 — 중단 알림에서 침묵이 가장 비싸다.
+  assert.ok(out.startsWith('🛑'), out);
+  assert.match(out, /청산 실패 NEXO/, out);
+});
+
+test('formatHaltAlert: 토큰 모양만 가리고 나머지 사유는 훼손하지 않는다', () => {
+  const out = formatHaltAlert({ reason: '일일 손실 한도 -300bps 도달 (거래 12건, 09:37~14:02)' });
+  assert.match(out, /일일 손실 한도 -300bps 도달 \(거래 12건, 09:37~14:02\)/, out);
+});
+
 test('알림 종류별 표식이 서로 겹치지 않는다', () => {
-  const eventMarks = Object.values(MARKERS.event);
+  const eventMarks = Object.values(MARKERS.event).flatMap((set) => Object.values(set));
   const otherMarks = [MARKERS.entry, MARKERS.win, MARKERS.loss, MARKERS.flat, MARKERS.halt];
   assert.equal(new Set(otherMarks).size, otherMarks.length, '진입·청산·중단 표식이 서로 달라야 한다');
   for (const m of eventMarks) {
     assert.ok(!otherMarks.includes(m), `재료 표식 ${m}이 다른 종류와 겹친다`);
   }
+});
+
+test('재료 표식은 방향(호재/악재)별로 하나도 겹치지 않는다', () => {
+  // 겹치는 등급이 하나라도 있으면 그 등급에서 호재와 악재가 다시 구별되지 않는다.
+  const bullish = new Set(Object.values(MARKERS.event.bullish));
+  const bearish = new Set(Object.values(MARKERS.event.bearish));
+  const neutral = new Set(Object.values(MARKERS.event.neutral));
+  for (const m of bearish) assert.ok(!bullish.has(m), `악재 표식 ${m}이 호재와 겹친다`);
+  for (const m of neutral) assert.ok(!bullish.has(m) && !bearish.has(m), `방향미상 표식 ${m}이 겹친다`);
 });
 
 // ---- buildSendUrl ----
@@ -344,12 +505,25 @@ test('buildSendUrl: bot<token>/<method> 형태를 만든다', () => {
 });
 
 test('buildSendUrl: 토큰이 비면 TypeError이고 메시지에 토큰이 없다', () => {
-  for (const bad of ['', '   ', null, undefined, 123]) {
+  // 이 단언은 한때 needle이 ' '(NUL)으로 폴백해 **무조건 통과**했다.
+  // 어떤 문자열도 NUL을 포함하지 않으므로, 구현이 토큰을 통째로 찍어도 초록이었다.
+  // 그래서 needle을 폴백시키지 않고, 값이 실제로 있을 때만 포함 여부를 묻는다.
+  const bads = ['', '   ', null, undefined, 123, FAKE_TOKEN.replace(':', ' '), '123:abc?x', '\t\n'];
+  for (const bad of bads) {
     assert.throws(
       () => buildSendUrl(bad, 'sendMessage'),
       (err) => {
-        assert.ok(err instanceof TypeError);
-        assert.ok(!String(err.message).includes(String(bad).trim() || ' '), err.message);
+        assert.ok(err instanceof TypeError, `${String(bad)}: ${err}`);
+        const needle = String(bad).trim();
+        // 값이 비어 있으면 "포함되지 않았는지"를 물을 대상 자체가 없다 —
+        // 그때는 대신 값을 통째로 직렬화해 넣지 않았는지를 묻는다.
+        if (needle) {
+          assert.ok(!err.message.includes(needle), `토큰 유출: ${err.message}`);
+        }
+        assert.ok(!err.message.includes(String(JSON.stringify(bad))), `직렬화된 토큰 유출: ${err.message}`);
+        // 값을 감췄다는 사실을 메시지가 스스로 밝혀야 나중에 누가 "왜 값이 없지" 하며
+        // 되살리지 않는다.
+        assert.match(err.message, /로그에 남기지 않습니다/);
         return true;
       }
     );
@@ -407,6 +581,66 @@ test('sendMessage: HTTP 오류 메시지에 토큰도 URL도 들어가지 않는
       assert.ok(!err.message.includes('api.telegram.org'), `URL 유출: ${err.message}`);
       assert.match(err.message, /400/);
       assert.match(err.message, /sendMessage/);
+      return true;
+    }
+  );
+});
+
+// M7 재현: 429는 "얼마나 기다려라"까지 알려주는데(본문 parameters.retry_after),
+// !res.ok에서 본문을 아예 읽지 않아 그 숫자가 호출부에 도달하지 못한다.
+// 호출부는 눈을 감고 재시도하게 되고, 그러면 rate limit이 더 길어진다.
+test('sendMessage: 429면 retry_after를 에러에 실어 준다', async () => {
+  const impl = stubFetch(() => ({
+    ok: false,
+    status: 429,
+    json: async () => ({
+      ok: false,
+      error_code: 429,
+      description: 'Too Many Requests: retry after 17',
+      parameters: { retry_after: 17 },
+    }),
+  }));
+  await assert.rejects(
+    () => sendMessage({ token: FAKE_TOKEN, chatId: 1, text: 'hi', fetchImpl: impl }),
+    (err) => {
+      assert.equal(err.status, 429);
+      assert.equal(err.retryAfter, 17, `백오프 초를 못 전달했다: ${err.retryAfter}`);
+      // 본문을 읽더라도 메시지에 붙이면 안 된다 — 프록시가 되돌려주는 URL로 토큰이 샌다.
+      assert.ok(!err.message.includes(FAKE_TOKEN), `토큰 유출: ${err.message}`);
+      assert.ok(!err.message.includes('api.telegram.org'), `URL 유출: ${err.message}`);
+      return true;
+    }
+  );
+});
+
+test('sendMessage: retry_after가 없으면 숫자를 지어내지 않는다', async () => {
+  // 0으로 위장하면 호출부가 "지금 바로 재시도해도 된다"로 읽는다.
+  const impl = stubFetch(() => ({ ok: false, status: 500, json: async () => ({ ok: false, error_code: 500 }) }));
+  await assert.rejects(
+    () => sendMessage({ token: FAKE_TOKEN, chatId: 1, text: 'hi', fetchImpl: impl }),
+    (err) => {
+      assert.equal(err.retryAfter, undefined, `없는 값을 지어냈다: ${err.retryAfter}`);
+      return true;
+    }
+  );
+});
+
+test('sendMessage: 오류 본문을 못 읽어도 에러 자체는 그대로 던진다', async () => {
+  // 텔레그램 앞단의 프록시는 429에 HTML을 돌려주기도 한다. 본문 파싱 실패가
+  // 전송 실패 보고 자체를 삼키면 호출부는 성공으로 오해한다.
+  const impl = stubFetch(() => ({
+    ok: false,
+    status: 502,
+    json: async () => {
+      throw new SyntaxError('Unexpected token < in JSON');
+    },
+  }));
+  await assert.rejects(
+    () => sendMessage({ token: FAKE_TOKEN, chatId: 1, text: 'hi', fetchImpl: impl }),
+    (err) => {
+      assert.match(err.message, /502/);
+      assert.equal(err.status, 502);
+      assert.ok(!(err instanceof SyntaxError), '본문 파싱 에러가 전송 에러를 덮었다');
       return true;
     }
   );
