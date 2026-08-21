@@ -373,6 +373,67 @@ test('classifyMaterial: 빗썸 "입출금 재개 안내"도 약호재로 잡는�
   assert.equal(r.kind, '입출금재개');
 });
 
+// ---- D1 수정이 새로 만든 반대 방향 오분류 ----
+//
+// 해제 규칙을 중단 규칙보다 위에 올려 D1을 고쳤는데, 그 결과 "중단합니다,
+// 재개는 나중에 알려드립니다" 형태의 **순수 중단 공지**가 재개로 넘어간다.
+// 고치려던 것과 정확히 같은 계열(방향이 뒤집힘)의 결함이다.
+
+test('classifyMaterial: "중단 안내(재개 시 별도 공지)"는 중단 공지다', () => {
+  const r = classifyMaterial({
+    title: '메가이더(MEGA) 입출금 일시 중단 안내 (재개 시 별도 공지)',
+    category: '입출금',
+    source: 'upbit',
+    knownSymbols: KNOWN,
+  });
+  assert.equal(r.direction, 'bearish', '재개 예고가 붙었다고 재개 공지가 되지 않는다');
+  assert.equal(r.kind, '입출금중단');
+});
+
+test('classifyMaterial: "중단 및 재개 일정 안내"도 중단 공지다', () => {
+  // 지금 일어나는 일은 중단이고 재개는 미래의 예정이다.
+  const r = classifyMaterial({
+    title: '메가이더(MEGA) 입출금 중단 및 재개 일정 안내',
+    category: '입출금',
+    source: 'upbit',
+    knownSymbols: KNOWN,
+  });
+  assert.equal(r.direction, 'bearish');
+  assert.equal(r.kind, '입출금중단');
+});
+
+test('classifyMaterial: 중단에 바로 붙은 "해제"·"중지 해제"는 재개로 남는다', () => {
+  // 가름의 기준은 해제가 중단에 직접 붙었는가다. 위 두 케이스를 막느라
+  // 진짜 재개 공지까지 막으면 D1을 되돌리는 것이 된다.
+  for (const title of [
+    '아스타(ASTR) 입출금 일시 중단 해제 안내',
+    '아스타(ASTR) 입출금 일시 중지 해제 안내',
+  ]) {
+    const r = classifyMaterial({ title, category: '입출금', source: 'upbit', knownSymbols: KNOWN });
+    assert.equal(r.direction, 'bullish', title);
+    assert.equal(r.kind, '입출금재개', title);
+  }
+});
+
+// ---- 유의해제 등급: 측정한 적 없는 우위를 매매 문턱 위에 두지 않는다 ----
+
+test('거래유의해제는 매매 하한(A급)을 넘지 않는다', () => {
+  // D1 수정 전에는 bearish라 현물에서 자동 차단됐다. bullish로 바로잡히면서
+  // 등급이 A급이면 harness/event-trading.json의 minGrade("A")와 정확히 일치해
+  // **결함 수정의 부작용으로 새 진입 경로가 열린다.** 안도 랠리의 크기를 이
+  // 저장소는 한 번도 측정한 적이 없다. 방향만 아는 재료는 알림까지다.
+  const { classifyMaterial: cm } = require('../src/material');
+  const r = cm({
+    title: '질리카(ZIL) 거래 유의 종목 지정 해제 안내',
+    category: '거래', source: 'upbit', knownSymbols: KNOWN,
+  });
+  assert.equal(r.direction, 'bullish');
+  const rank = { S: 4, A: 3, B: 2, C: 1 };
+  const minGrade = require('../harness/event-trading.json').minGrade;
+  assert.ok(rank[r.grade] < rank[minGrade],
+    `유의해제 ${r.grade}급이 매매 하한 ${minGrade}급 이상이면 미측정 전략이 자동 진입한다`);
+});
+
 test('classifyMaterial: 거래유의 카테고리 폴백은 방향을 단정하지 않는다', () => {
   // 빗썸은 해제 공지도 '거래유의' 카테고리에 넣는다. 카테고리만으로 방향을
   // bearish로 못박으면 그 카테고리 전체가 S급 악재로 고정된다.
