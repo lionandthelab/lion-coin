@@ -337,6 +337,28 @@ test('onPriceTick: 유효한 low/high는 그대로 쓴다', () => {
   assert.equal(highHit.action.reason, 'take_profit');
 });
 
+test('onPriceTick: 모순된 봉값이 와도 현재가가 지난 범위를 좁히지 못한다', () => {
+  // 봉값과 현재가는 다른 요청에서 오거나 다른 시각을 가리킬 수 있어, 저가가 현재가보다
+  // **높은** 모순된 봉이 실제로 온다. 봉값을 그대로 믿으면(min/max 래퍼 없이)
+  // 현재가가 이미 손절선을 지났는데도 "저가가 아직 안 닿았다"며 포지션을 들고 있게 된다.
+  // 청산 규칙은 현재가와 봉값 중 **더 나쁜 쪽**을 봐야 한다 — 둘 중 하나라도
+  // 선을 지났으면 시장은 그 가격을 지난 것이다.
+  const held = holding(); // 손절선 98.5, 익절선 103
+
+  // ① 저가(99)가 현재가(98)보다 높은 모순 봉. Math.min이 없으면 lowest=99라 손절이 안 나간다.
+  const lowContradicts = onPriceTick(held, { price: 98, low: 99, now: T0 + 1000 });
+  assert.equal(lowContradicts.state.status, STATES.EXITING,
+    '현재가 98이 손절선 98.5를 지났는데 봉의 저가 99에 가려 빠져나오지 못했다');
+  assert.equal(lowContradicts.action.reason, 'stop_loss');
+
+  // ② 대칭. 고가(102)가 현재가(104)보다 낮은 모순 봉. Math.max가 없으면 highest=102라
+  //    익절선 103에 닿지 못한 것으로 읽힌다.
+  const highContradicts = onPriceTick(held, { price: 104, high: 102, now: T0 + 1000 });
+  assert.equal(highContradicts.state.status, STATES.EXITING,
+    '현재가 104가 익절선 103을 지났는데 봉의 고가 102에 가려 실현하지 못했다');
+  assert.equal(highContradicts.action.reason, 'take_profit');
+});
+
 test('onPriceTick: 같은 틱에서 익절·손절이 동시에 충족되면 손절을 택한다', () => {
   // 틱 하나로는 어느 쪽이 먼저였는지 알 수 없다. 익절을 택하면 성과가 조직적으로
   // 부풀려지고, 그 순간 백테스트(bracket-backtest.js)와 실전이 어긋난다.
