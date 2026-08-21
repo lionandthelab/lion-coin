@@ -198,7 +198,12 @@ test('parseRss: 채널 제목·링크를 기사로 오인하지 않는다', () =
 
 test('parseRss: pubDate2 같은 유사 태그를 pubDate로 착각하지 않는다', () => {
   // 블록미디어 피드는 <pubDate>(UTC 오프셋 명시) 뒤에 <pubDate2>(KST, 오프셋 없음)를
-  // 함께 싣는다. 느슨한 정규식은 뒤엣것을 집어 9시간 어긋난 시각을 만든다.
+  // 함께 싣는다. 두 값은 **같은 순간**을 다르게 적은 것이라, 느슨한 매칭의 피해는
+  // "시각이 어긋나는 것"이 아니라 닫는 태그가 </pubDate2>에 맞지 않아 시각을
+  // 통째로 잃는 것이다(22be6ff에서 정정한 실패 양상).
+  // 다만 이 입력은 <pubDate>가 아예 없어 느슨한 정규식으로도 닫는 태그를 못 찾아
+  // 어느 쪽이든 null이다 — 여는 태그 경계는 아래 "순서를 뒤집은" 테스트가 검증한다.
+  // 여기서 못박는 것은 "pubDate가 없으면 시각을 지어내지 않는다"뿐이다.
   const xml = `<rss><channel><item>
     <title>오프셋 없는 시각만 있는 기사</title>
     <link>https://x.test/1</link>
@@ -521,8 +526,7 @@ test('parseRss: &#0;은 NUL을 주입하지 않고 원문으로 남는다', () =
 test('parseRss: pubDate2가 pubDate보다 앞에 와도 pubDate를 집는다', () => {
   // 기존 pubDate2 테스트는 <pubDate2>만 있는 입력을 썼다. 그 입력은 느슨한 정규식으로도
   // 닫는 태그 </pubDate>를 못 찾아 null이 나오므로, 여는 태그 경계를 전혀 검증하지
-  // 못했다(변이 생존). 순서를 뒤집어야 경계가 실제로 갈린다:
-  // 느슨한 <pubDate[^>]*>는 <pubDate2>를 집어 KST 값을 읽고 9시간 어긋난다.
+  // 못했다(변이 생존). 순서를 뒤집어야 경계가 실제로 갈린다.
   const xml = `<rss><channel><item>
     <title>pubDate2가 먼저 오는 기사</title>
     <link>https://x.test/1</link>
