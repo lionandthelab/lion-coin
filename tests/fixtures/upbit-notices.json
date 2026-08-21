@@ -1,0 +1,341 @@
+{
+ "success": true,
+ "data": {
+  "total_pages": 192,
+  "total_count": 5748,
+  "notices": [
+   {
+    "listed_at": "2026-08-21T21:50:05+09:00",
+    "first_listed_at": "2026-08-21T19:19:25+09:00",
+    "id": 6496,
+    "uuid": "898944907",
+    "title": "넥소(NEXO) 신규 거래지원 안내 (USDT 마켓) (거래지원 개시 시점 변경 안내)",
+    "category": "거래",
+    "need_new_badge": false,
+    "need_update_badge": true
+   },
+   {
+    "listed_at": "2026-08-21T21:06:32+09:00",
+    "first_listed_at": "2026-08-21T21:06:32+09:00",
+    "id": 6498,
+    "uuid": "1961316162",
+    "title": "업비트 Open API Rate Limit 상향 안내 - 더 여유로운 API 주문 환경을 제공해요",
+    "category": "안내",
+    "need_new_badge": true,
+    "need_update_badge": false
+   },
+   {
+    "listed_at": "2026-08-21T20:31:55+09:00",
+    "first_listed_at": "2026-08-21T20:31:55+09:00",
+    "id": 6497,
+    "uuid": "1319474763",
+    "title": "엑스알피(리플)(XRP) 거래하고, 총 상금 1 BTC 받아가세요! XRP TOP 100 트레이딩 이벤트!",
+    "category": "이벤트",
+    "need_new_badge": true,
+    "need_update_badge": false
+   },
+   {
+    "listed_at": "2026-08-21T19:05:08+09:00",
+    "first_listed_at": "2026-08-21T19:05:08+09:00",
+    "id": 6495,
+    "uuid": "789221553",
+    "title": "메가이더(MEGA) 입출금 일시 중단 안내 (08/25 09:00 ~)",
+    "category": "입출금",
+    "need_new_badge": true,
+    "need_update_badge": false
+   },
+   {
+    "listed_at": "2026-08-21T17:12:30+09:00",
+    "first_listed_at": "2026-08-12T14:13:20+09:00",
+    "id": 6468,
+    "uuid": "851743553",
+    "title": "Ontology 네트워크 계열 디지털 자산 입출금 일시 중단 안내 (완료)",
+    "category": "입출금",
+    "need_new_badge": false,
+    "need_update_badge": true
+   },
+   {
+    "listed_at": "2026-08-21T17:01:53+09:00",
+    "first_listed_at": "2026-08-21T17:01:53+09:00",
+    "id": 6494,
+    "uuid": "43348132",
+    "title": "유통량 계획표 변경 안내 : 바이오프로토콜(BIO)",
+    "category": "디지털 자산",
+    "need_new_badge": true,
+    "need_update_badge": false
+   },
+   {
+    "listed_at": "2026-08-21T17:00:01+09:00",
+    "first_listed_at": "2026-08-21T17:00:01+09:00",
+    "id": 6493,
+    "uuid": "1393371510",
+    "title": "만트라(MANTRA) 거래 유의 종목 지정 안내",
+    "category": "거래",
+    "need_new_badge": true,
+    "need_update_badge": false
+   },
+   {
+    "listed_at": "2026-08-21T16:00:00+09:00",
+    "first_listed_at": "2026-08-21T16:00:00+09:00",
+    "id": 6492,
+    "uuid": "1994607358",
+    "title": "질리카(ZIL) 거래 유의 종목 지정 기간 연장 안내",
+    "category": "거래",
+    "need_new_badge": true,
+    "need_update_badge": false
+   },
+   {
+    "listed_at": "2026-08-21T15:50:00+09:00",
+    "first_listed_at": "2026-08-21T09:48:00+09:00",
+    "id": 6489,
+    "uuid": "562211184",
+    "title": "BTC, USDT 마켓 신규 거래지원 안내 (BICO, BMT, NIL, GWEI) (BICO, BMT, NIL, GWEI 거래지원 개시 시점 추가 변경 안내)",
+    "category": "거래",
+    "need_new_badge": false,
+    "need_update_badge": true
+   },
+   {
+    "listed_at": "2026-08-21T13:59:19+09:00",
+    "first_listed_at": "2026-08-21T13:59:19+09:00",
+    "id": 6491,
+    "uuid": "748809016",
+    "title": "디지털 자산 실사보고서 결과 공개 (2026년 08월 01일 기준)",
+    "category": "안내",
+    "need_new_badge": true,
+    "need_update_badge": false
+   },
+   {
+    "listed_at": "2026-08-21T11:22:40+09:00",
+    "first_listed_at": "2026-08-21T11:22:40+09:00",
+    "id": 6490,
+    "uuid": "851252575",
+    "title": "커브(CRV) KRW, USDT 마켓 디지털 자산 추가",
+    "category": "거래",
+    "need_new_badge": true,
+    "need_update_badge": false
+   },
+   {
+    "listed_at": "2026-08-21T09:38:30+09:00",
+    "first_listed_at": "2026-08-14T11:03:41+09:00",
+    "id": 6472,
+    "uuid": "1562059629",
+    "title": "아스타(ASTR) 입출금 일시 중단 안내 (완료)",
+    "category": "입출금",
+    "need_new_badge": false,
+    "need_update_badge": true
+   },
+   {
+    "listed_at": "2026-08-21T08:46:35+09:00",
+    "first_listed_at": "2026-08-21T08:46:35+09:00",
+    "id": 6488,
+    "uuid": "722366027",
+    "title": "만트라(MANTRA) 입출금 일시 중단 안내",
+    "category": "입출금",
+    "need_new_badge": true,
+    "need_update_badge": false
+   },
+   {
+    "listed_at": "2026-08-20T17:33:10+09:00",
+    "first_listed_at": "2026-08-18T16:11:22+09:00",
+    "id": 6482,
+    "uuid": "229696394",
+    "title": "메디블록(MED) 입출금 일시 중단 안내 (완료)",
+    "category": "입출금",
+    "need_new_badge": false,
+    "need_update_badge": false
+   },
+   {
+    "listed_at": "2026-08-19T17:02:47+09:00",
+    "first_listed_at": "2026-08-19T17:02:47+09:00",
+    "id": 6486,
+    "uuid": "1077942889",
+    "title": "그래비티토큰(GRVT) 트레이딩 위크 : 거래 미션 달성하고, TOP 100 탑트레이더에 도전하세요!",
+    "category": "이벤트",
+    "need_new_badge": false,
+    "need_update_badge": false
+   },
+   {
+    "listed_at": "2026-08-19T10:45:31+09:00",
+    "first_listed_at": "2026-08-18T14:49:14+09:00",
+    "id": 6481,
+    "uuid": "340949822",
+    "title": "Polygon 네트워크 계열 디지털 자산 입출금 일시 중단 안내 (완료)",
+    "category": "입출금",
+    "need_new_badge": false,
+    "need_update_badge": false
+   },
+   {
+    "listed_at": "2026-08-19T10:29:07+09:00",
+    "first_listed_at": "2026-08-14T19:43:24+09:00",
+    "id": 6478,
+    "uuid": "1194592486",
+    "title": "알로라(ALLO) 입출금 일시 중단 안내 (완료)",
+    "category": "입출금",
+    "need_new_badge": false,
+    "need_update_badge": false
+   },
+   {
+    "listed_at": "2026-08-19T10:21:08+09:00",
+    "first_listed_at": "2026-08-19T10:21:08+09:00",
+    "id": 6485,
+    "uuid": "756975712",
+    "title": "NEO N3, Ontology 네트워크 계열 디지털 자산 입출금 일시 중단 안내 (08/26 22:00 ~)",
+    "category": "입출금",
+    "need_new_badge": false,
+    "need_update_badge": false
+   },
+   {
+    "listed_at": "2026-08-19T10:01:15+09:00",
+    "first_listed_at": "2026-08-13T13:38:50+09:00",
+    "id": 6470,
+    "uuid": "31608911",
+    "title": "포켓네트워크(POKT) 입출금 일시 중단 안내 (완료)",
+    "category": "입출금",
+    "need_new_badge": false,
+    "need_update_badge": false
+   },
+   {
+    "listed_at": "2026-08-18T19:11:57+09:00",
+    "first_listed_at": "2026-08-18T19:11:57+09:00",
+    "id": 6484,
+    "uuid": "1284012208",
+    "title": "모나드(MON) 입출금 일시 중단 안내 (08/25 23:00 ~)",
+    "category": "입출금",
+    "need_new_badge": false,
+    "need_update_badge": false
+   },
+   {
+    "listed_at": "2026-08-18T17:52:13+09:00",
+    "first_listed_at": "2026-08-18T17:52:13+09:00",
+    "id": 6483,
+    "uuid": "412664179",
+    "title": "엘프(ELF) 입출금 일시 중단 안내",
+    "category": "입출금",
+    "need_new_badge": false,
+    "need_update_badge": false
+   },
+   {
+    "listed_at": "2026-08-18T00:00:01+09:00",
+    "first_listed_at": "2026-08-14T16:00:01+09:00",
+    "id": 6474,
+    "uuid": "1803037953",
+    "title": " 8월 15일부터 단 3일간! USDT 마켓 전 종목 거래 수수료 0% 혜택을 만나보세요! (이벤트 종료)",
+    "category": "이벤트",
+    "need_new_badge": false,
+    "need_update_badge": false
+   },
+   {
+    "listed_at": "2026-08-17T11:51:13+09:00",
+    "first_listed_at": "2026-08-17T11:51:13+09:00",
+    "id": 6480,
+    "uuid": "1316552068",
+    "title": "8월 2주차 GAS 에어드랍 지급 안내",
+    "category": "디지털 자산",
+    "need_new_badge": false,
+    "need_update_badge": false
+   },
+   {
+    "listed_at": "2026-08-14T19:55:28+09:00",
+    "first_listed_at": "2026-08-14T19:55:28+09:00",
+    "id": 6479,
+    "uuid": "1700356590",
+    "title": "국세청 사칭 가상자산 과세 관련 피싱메일 주의 안내",
+    "category": "안내",
+    "need_new_badge": false,
+    "need_update_badge": false
+   },
+   {
+    "listed_at": "2026-08-14T17:01:46+09:00",
+    "first_listed_at": "2026-08-10T16:06:43+09:00",
+    "id": 6461,
+    "uuid": "1694599037",
+    "title": "루미웨이브프로토콜(LWP) 입출금 일시 중단 안내 (완료)",
+    "category": "입출금",
+    "need_new_badge": false,
+    "need_update_badge": false
+   },
+   {
+    "listed_at": "2026-08-14T16:00:06+09:00",
+    "first_listed_at": "2026-08-14T16:00:06+09:00",
+    "id": 6477,
+    "uuid": "1661951230",
+    "title": "스토리지(STORJ) 거래지원 종료 안내 (9/14 15:00)",
+    "category": "거래",
+    "need_new_badge": false,
+    "need_update_badge": false
+   },
+   {
+    "listed_at": "2026-08-14T16:00:05+09:00",
+    "first_listed_at": "2026-08-14T16:00:05+09:00",
+    "id": 6476,
+    "uuid": "1295640094",
+    "title": "재스미코인(JASMY) 거래지원 종료 안내(9/14 15:00)",
+    "category": "거래",
+    "need_new_badge": false,
+    "need_update_badge": false
+   },
+   {
+    "listed_at": "2026-08-14T16:00:04+09:00",
+    "first_listed_at": "2026-08-14T16:00:04+09:00",
+    "id": 6475,
+    "uuid": "277265961",
+    "title": "썬더코어(TT) 거래지원 종료 안내 (9/14 15:00)",
+    "category": "거래",
+    "need_new_badge": false,
+    "need_update_badge": false
+   },
+   {
+    "listed_at": "2026-08-14T15:58:17+09:00",
+    "first_listed_at": "2026-07-26T08:30:03+09:00",
+    "id": 6413,
+    "uuid": "644912522",
+    "title": "새롭게 돌아온 스테이블 코인 그룹 페어 거래 수수료 무료 이벤트 안내 (이벤트 기간 연장 안내, ~8/23)",
+    "category": "이벤트",
+    "need_new_badge": false,
+    "need_update_badge": false
+   },
+   {
+    "listed_at": "2026-08-14T11:25:06+09:00",
+    "first_listed_at": "2026-08-14T11:25:06+09:00",
+    "id": 6473,
+    "uuid": "819063468",
+    "title": "유통량 계획표 변경 안내 : 세이프(SAFE)",
+    "category": "디지털 자산",
+    "need_new_badge": false,
+    "need_update_badge": false
+   }
+  ],
+  "fixed_notices": [
+   {
+    "listed_at": "2026-06-23T10:30:49+09:00",
+    "first_listed_at": "2022-08-25T20:00:02+09:00",
+    "id": 2895,
+    "uuid": "2895",
+    "title": "특정금융정보법에 따른 미신고 가상자산사업자와의 입출금 제한 및 유의사항 (2026.06.23 추가)",
+    "category": "안내",
+    "need_new_badge": false,
+    "need_update_badge": false
+   },
+   {
+    "listed_at": "2026-01-26T11:27:44+09:00",
+    "first_listed_at": "2026-01-26T11:20:01+09:00",
+    "id": 5961,
+    "uuid": "5961",
+    "title": "업비트 개선 사항 : 주의 종목 경보 세분화 (주의/경고/위험)",
+    "category": "안내",
+    "need_new_badge": false,
+    "need_update_badge": false
+   },
+   {
+    "listed_at": "2025-10-29T11:00:00+09:00",
+    "first_listed_at": "2025-10-29T11:00:00+09:00",
+    "id": 5696,
+    "uuid": "5696",
+    "title": "불공정거래 예방조치 제도 안내",
+    "category": "안내",
+    "need_new_badge": false,
+    "need_update_badge": false
+   }
+  ]
+ }
+}
