@@ -230,20 +230,25 @@ function planEventTrade({
     // 비례하므로 "몇 배 모자라는지"에서 필요한 값을 그대로 역산해 적는다.
     // 위험 비중으로 해결되는 경우와, 비중을 아무리 올려도 소용없는 경우를 구분한다.
     const shortfall = minNotionalKrw / bracket.notional;
-    const requiredRiskPct = riskPct * shortfall;
     const requiredCapital = Math.ceil(capital * shortfall);
     let advice;
-    if (bracket.cappedByCapital) {
-      // 명목이 이미 자본 한도에 잘려 있다. 레버리지를 쓰지 않으므로 비중을 올려도
-      // 명목은 1원도 커지지 않는다 — 여기서 "비중을 올리세요"는 틀린 진단이다.
+    // **가르는 값은 자본이 최소 주문금액에 닿는가다.**
+    // 레버리지를 쓰지 않으므로 명목은 자본을 넘지 못한다. 자본이 최소 주문금액보다
+    // 작으면 어떤 비중으로도 닿을 수 없고, 자본이 그 위면 비중을 끝까지 올렸을 때
+    // 명목이 자본과 같아지므로 반드시 닿는다.
+    //
+    // cappedByCapital로 가르면 틀린다. 그 값은 명목 > 자본(엄격 부등호)이라 명목이
+    // 자본과 *정확히 같을* 때 false가 되고, 하필 기본 설정(비중 1%, B급 손절
+    // 100bps)이 그 경우다 — 자본 3,000원에 "비중을 1.67%로 올리세요"라고 적는다.
+    if (capital < minNotionalKrw) {
       advice =
-        `명목이 이미 자본 한도(${Math.round(capital).toLocaleString()}원)에 잘려 있어 위험 비중을 올려도 ` +
-        `명목은 커지지 않습니다 — 자본을 ${minNotionalKrw.toLocaleString()}원 이상으로 키우는 것 말고는 방법이 없습니다.`;
-    } else if (requiredRiskPct > 100) {
-      advice =
-        `위험 비중을 상한인 100%로 올려도 최소 주문금액에 닿지 않습니다 — ` +
-        `자본을 ${requiredCapital.toLocaleString()}원 이상으로 키워야 합니다.`;
+        `명목은 자본(${Math.round(capital).toLocaleString()}원)을 넘을 수 없어 위험 비중으로는 해결되지 않습니다 — ` +
+        `자본을 최소 ${minNotionalKrw.toLocaleString()}원(현재 비중 ${riskPct}%를 유지하려면 ` +
+        `${requiredCapital.toLocaleString()}원) 이상으로 키워야 합니다.`;
     } else {
+      // 표시 자릿수에서 **올림**한다. 내림하면 적어준 숫자를 그대로 넣었을 때
+      // 여전히 최소 주문금액에 못 미쳐, 조언이 존재 이유를 잃는다.
+      const requiredRiskPct = Math.ceil(riskPct * shortfall * 100) / 100;
       advice =
         `위험 비중을 ${requiredRiskPct.toFixed(2)}% 이상으로 올리거나 ` +
         `자본을 ${requiredCapital.toLocaleString()}원 이상으로 키워야 합니다.`;

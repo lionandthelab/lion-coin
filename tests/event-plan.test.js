@@ -486,9 +486,9 @@ test('planEventTrade: 자본 한도에 걸린 계획에는 위험 비중을 올�
   });
   assert.equal(p.executable, false);
   assert.equal(p.cappedByCapital, true);
-  assert.doesNotMatch(p.reason, /위험 비중을 올리/, '틀린 손잡이를 돌리게 만드는 조언이다');
-  assert.doesNotMatch(p.reason, /위험 비중을 [\d.]+% 이상으로 올리/);
-  assert.match(p.reason, /자본 한도/, '왜 비중이 소용없는지까지 적어야 같은 사고가 반복되지 않는다');
+  assert.doesNotMatch(p.reason, /위험 비중을 [\d.]+% 이상으로 올리/, '틀린 손잡이를 돌리게 만드는 조언이다');
+  assert.match(p.reason, /자본.*넘을 수 없어/,
+    '왜 비중이 소용없는지까지 적어야 같은 사고가 반복되지 않는다');
 });
 
 test('planEventTrade: 비중을 올리면 될 것처럼 보이지만 자본 한도에 걸린 경우도 구분한다', () => {
@@ -501,7 +501,7 @@ test('planEventTrade: 비중을 올리면 될 것처럼 보이지만 자본 한�
   assert.equal(p.cappedByCapital, true);
   assert.equal(p.executable, false);
   assert.doesNotMatch(p.reason, /3\.75%/, '자본 한도를 무시한 역산은 틀린 조언이다');
-  assert.match(p.reason, /자본 한도/);
+  assert.match(p.reason, /자본.*넘을 수 없어/);
 });
 
 test('planEventTrade: 자본 자체가 최소 주문금액보다 작으면 비중 조언을 하지 않는다', () => {
@@ -540,15 +540,17 @@ test('planEventTrade: 비중 조언은 그대로 따르면 실제로 통해야 �
   assert.ok(checked > 0, '비중 조언이 한 번도 나오지 않아 검증한 것이 없다');
 });
 
-test('planEventTrade: 위험 비중 상한으로도 못 넘으면 필요한 자본을 알려준다', () => {
-  // 자본 50원. 비중을 100%까지 올려도 명목이 5,000원에 닿지 않는다.
+test('planEventTrade: 비중으로 못 넘을 때는 필요한 자본을 두 가지로 적는다', () => {
+  // 자본 50원. 비중을 아무리 올려도 명목은 50원을 넘지 못한다.
+  // 넘어야 할 벽은 두 개다 — 최소 주문금액(5,000원)이 절대 하한이고,
+  // 지금 비중 1%를 그대로 두고 싶으면 10,000원이 필요하다.
   const p = planEventTrade({
     ...base, capital: 50, riskPct: 1, grade: 'S', direction: 'bullish',
   });
   assert.equal(p.executable, false);
-  assert.equal(p.cappedByCapital, false, '이 조합은 자본 한도에 걸리기 전에 최소명목에서 막힌다');
-  assert.match(p.reason, /100%/);
-  assert.match(p.reason, /10,000원/, '필요한 자본을 계산해서 적는다');
+  assert.doesNotMatch(p.reason, /위험 비중을 [\d.]+% 이상으로 올리/);
+  assert.match(p.reason, /5,000원/, '절대 하한을 적는다');
+  assert.match(p.reason, /10,000원/, '현재 비중을 유지할 때 필요한 자본도 적는다');
 });
 
 // ---- 기록: risk_off 배수의 함정 ----
