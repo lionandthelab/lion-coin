@@ -335,7 +335,9 @@ test('classifyMaterial: 유의 종목 지정 "해제"는 악재가 아니라 호
   });
   assert.equal(r.direction, 'bullish');
   assert.equal(r.kind, '거래유의해제');
-  assert.equal(r.grade, 'A', '안도 랠리는 신규 상장만큼 크지 않다');
+  // 등급 근거는 아래 '매매 하한을 넘지 않는다' 테스트에 있다 — 방향은 확실해도
+  // 폭을 측정한 적이 없어 매매 문턱 아래에 둔다.
+  assert.equal(r.grade, 'B');
   assert.deepEqual(r.tickers, ['ZIL']);
 });
 
