@@ -160,7 +160,8 @@ function formatKstTime(at) {
 // 제목이 없다고 던지지 않는다.
 //
 // event-sources.js는 제목이 문자열이 아니면 의도적으로 ''로 정규화하고,
-// classifyMaterial은 빈 제목이어도 카테고리 폴백('거래유의')으로 S급을 준다.
+// classifyMaterial은 빈 제목이어도 카테고리 폴백('거래유의')으로 **B급/neutral**을
+// 준다 — 등급이 붙는 이상 이 함수까지 내려온다.
 // 그리고 event-trader.js에서 이 함수의 호출은 `notify(format...())` 즉 notify의
 // **인자**라 notify가 감싸 둔 try/catch 밖에서 평가된다. 여기서 던지면 TypeError가
 // pollOnce를 뚫고 나가 폴링 배치가 통째로 중단되고, 같은 배치의 남은 재료까지

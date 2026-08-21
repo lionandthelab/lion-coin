@@ -201,7 +201,8 @@ test('formatEventAlert: 등급이 없으면 등급미상으로 표시하고 던�
 
 // H2 재현: 제목이 비면 던지는 게 아니라 대체 문구로 알려야 한다.
 // event-sources.js는 제목이 문자열이 아니면 의도적으로 ''로 정규화하고,
-// classifyMaterial은 빈 제목이어도 카테고리 폴백('거래유의')으로 S급을 준다.
+// classifyMaterial은 빈 제목이어도 카테고리 폴백('거래유의')으로 **B급/neutral**을
+// 준다 — 등급이 붙는 이상 걸러지지 않고 포맷 함수까지 내려온다.
 // event-trader.js에서 포맷 호출은 notify()의 **인자**라 notify의 try/catch 밖에서
 // 평가되므로, 여기서 던지면 TypeError가 pollOnce를 뚫고 나가 폴링 배치가 통째로
 // 중단된다 — 남은 재료까지 전부 버려진다. 이 모듈 자신이 formatHaltAlert에서
