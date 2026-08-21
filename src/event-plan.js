@@ -41,6 +41,23 @@ const RISK_OFF_BREADTH = 40;
 
 const MULTIPLIERS = { risk_on: 1.3, neutral: 1.0, risk_off: 0.7 };
 
+// **risk_off 배수의 함정 — 이 값을 조정할 사람은 반드시 읽을 것.**
+// 배수는 익절에만 곱하고 손절·수량은 그대로 두므로, risk_off는 손익비를 구조적으로
+// 나쁘게 만든다. B급(익절 150·손절 100, 편도 8bps) 기준 손익분기 승률은
+// neutral 46.4% → risk_off 56.6%로 10%p 넘게 오른다. 즉 "재료가 죽는 장에서
+// 익절을 좁힌다"는 규칙은 **더 자주 맞아야만 본전인 규칙**이다. 익절을 좁히는 대신
+// 수량을 줄이거나(위험 자체를 줄이거나) 아예 매매하지 않는 선택지와 비교해 보지 않고
+// 이 숫자만 만지면, 나쁜 장에서 요구 승률만 올리는 방향으로 조정하기 쉽다.
+// 사양으로 유지하는 이유는 나쁜 장에서 목표가에 닿지 못한 채 시간초과 청산되는
+// 비용이 더 크다고 봤기 때문이며, 이 판단은 실측으로 재검증되기 전까지 잠정이다.
+
+// 배수의 허용 범위. 배수는 등급표가 정한 익절폭을 시황만큼 **보정**하는 값이지
+// 익절폭을 새로 정의하는 값이 아니다. marketContext는 이 모듈이 만들지 않고
+// 호출자가 넣으므로, 손상된 값 하나가 익절을 수십 배로 벌리거나(익절에 영영 닿지
+// 못하는 포지션) 0에 가깝게 좁히는(진입 즉시 청산) 것을 곱하기 직전에 막는다.
+const MIN_MULTIPLIER = 0.5;
+const MAX_MULTIPLIER = 2;
+
 const UNKNOWN_CONTEXT = {
   regime: null,
   multiplier: null,
@@ -124,7 +141,9 @@ function planEventTrade({
   capital,
   riskPct = 1,
   price,
-  feeBps = 0,
+  // feeBps에는 기본값을 두지 않는다. 생략하면 "무비용 계획"이 조용히 만들어지는데,
+  // 비용을 낙관적으로 가정한 계획은 실측과 어긋나 검증 자체를 무의미하게 만든다.
+  feeBps,
   minNotionalKrw = MIN_NOTIONAL_KRW,
 } = {}) {
   // ① 현물 제약. 이걸 놓치면 악재 공지에 매수 주문이 나간다.
@@ -135,9 +154,15 @@ function planEventTrade({
     return noTrade(`재료의 방향이 'bullish'가 아닙니다(받은 값: ${JSON.stringify(direction)}) — 방향을 모르면 매매하지 않습니다.`);
   }
 
-  // ② 등급.
-  const key = typeof grade === 'string' ? grade.toUpperCase() : grade;
-  if (!(key in GRADE_PLAYBOOK)) {
+  // ② 등급. 표는 문자열 키로만, 그것도 자기 속성으로만 조회한다.
+  //    문자열이 아닌 값은 키로 쓰이면서 문자열화된다 — 배열 ['S']는 'S'가 되어
+  //    실제 S급 계획을 만들어냈다. `in`은 프로토타입 체인까지 뒤져 'constructor',
+  //    'toString' 같은 이름을 "아는 등급"으로 통과시킨다. 둘 다 여기서 막는다.
+  if (typeof grade !== 'string') {
+    return noTrade(`재료 등급이 문자열이 아닙니다(받은 값: ${JSON.stringify(grade)}) — 등급을 모르면 매매하지 않습니다.`);
+  }
+  const key = grade.toUpperCase(); // 소문자로 들어온 등급도 같은 급으로 읽는다.
+  if (!Object.prototype.hasOwnProperty.call(GRADE_PLAYBOOK, key)) {
     return noTrade(`알 수 없는 재료 등급입니다(받은 값: ${JSON.stringify(grade)}) — 등급을 모르면 매매하지 않습니다.`);
   }
   const playbook = GRADE_PLAYBOOK[key];
@@ -147,14 +172,28 @@ function planEventTrade({
 
   // ③ 시황. 모르는 채로는 익절폭을 정할 수 없다.
   const ctx = marketContext ?? UNKNOWN_CONTEXT;
-  if (ctx.regime == null || !isFiniteNumber(ctx.multiplier)) {
+  if (ctx.regime == null) {
     return noTrade(`시황을 판정할 수 없어 매매하지 않습니다 — ${ctx.reason ?? UNKNOWN_CONTEXT.reason}`);
+  }
+  // 배수는 곱하기 직전에 범위까지 본다. null이 가장 위험하다 — 300 * null === 0이라
+  // NaN처럼 시끄럽게 실패하지 않고 "진입 즉시 익절"인 계획이 정상처럼 통과한다.
+  // 범위를 벗어난 배수는 매매 불가이지 예외가 아니다. 던지면 호출자가 넘긴 적도 없는
+  // 내부 파라미터명이 에러로 새어 나가고, "매매 불가는 noTrade로 돌려준다"는
+  // 이 모듈의 원칙도 깨진다.
+  if (!isFiniteNumber(ctx.multiplier) || ctx.multiplier < MIN_MULTIPLIER || ctx.multiplier > MAX_MULTIPLIER) {
+    return noTrade(
+      `시황 배수가 허용 범위(${MIN_MULTIPLIER}~${MAX_MULTIPLIER})를 벗어나 매매하지 않습니다` +
+      `(regime: ${ctx.regime}, 배수: ${String(ctx.multiplier)}) — 시황 판정이 손상된 상태입니다.`
+    );
   }
 
   // ④ 숫자.
   assertPositive(price, 'price');
   assertPositive(capital, 'capital');
   assertPositive(riskPct, 'riskPct');
+  if (feeBps === undefined) {
+    throw new RangeError('feeBps(편도 수수료)를 명시해야 합니다 — 비용을 0으로 가정한 계획은 실측과 어긋납니다.');
+  }
   assertNonNegative(feeBps, 'feeBps');
   assertPositive(minNotionalKrw, 'minNotionalKrw');
 
@@ -186,10 +225,33 @@ function planEventTrade({
     // 실제로 있었던 사고: 손절폭을 넓히면서 위험 비중을 그대로 뒀더니 계산된 명목이
     // 최소 주문금액 아래로 떨어졌다. 개별 값은 전부 정상 범위라 어디서도 경고가 뜨지
     // 않은 채, 신호는 계속 뜨는데 단 한 건도 체결되지 않았다 — 가장 조용한 실패다.
+    //
+    // 조언이 틀리면 이 문자열은 존재 이유를 잃는다. 명목은 위험 비중과 자본에
+    // 비례하므로 "몇 배 모자라는지"에서 필요한 값을 그대로 역산해 적는다.
+    // 위험 비중으로 해결되는 경우와, 비중을 아무리 올려도 소용없는 경우를 구분한다.
+    const shortfall = minNotionalKrw / bracket.notional;
+    const requiredRiskPct = riskPct * shortfall;
+    const requiredCapital = Math.ceil(capital * shortfall);
+    let advice;
+    if (bracket.cappedByCapital) {
+      // 명목이 이미 자본 한도에 잘려 있다. 레버리지를 쓰지 않으므로 비중을 올려도
+      // 명목은 1원도 커지지 않는다 — 여기서 "비중을 올리세요"는 틀린 진단이다.
+      advice =
+        `명목이 이미 자본 한도(${Math.round(capital).toLocaleString()}원)에 잘려 있어 위험 비중을 올려도 ` +
+        `명목은 커지지 않습니다 — 자본을 ${minNotionalKrw.toLocaleString()}원 이상으로 키우는 것 말고는 방법이 없습니다.`;
+    } else if (requiredRiskPct > 100) {
+      advice =
+        `위험 비중을 상한인 100%로 올려도 최소 주문금액에 닿지 않습니다 — ` +
+        `자본을 ${requiredCapital.toLocaleString()}원 이상으로 키워야 합니다.`;
+    } else {
+      advice =
+        `위험 비중을 ${requiredRiskPct.toFixed(2)}% 이상으로 올리거나 ` +
+        `자본을 ${requiredCapital.toLocaleString()}원 이상으로 키워야 합니다.`;
+    }
     reason =
       `위험 비중 ${riskPct}%와 ${key}급 손절 ${stopLossBps}bps 조합에서 계산된 주문 명목이 ` +
       `${Math.round(bracket.notional).toLocaleString()}원으로 최소 주문금액 ${minNotionalKrw.toLocaleString()}원에 ` +
-      `못 미칩니다 — 신호는 떠도 단 한 건도 체결되지 않습니다. 위험 비중을 올리거나 자본을 키우세요.`;
+      `못 미칩니다 — 신호는 떠도 단 한 건도 체결되지 않습니다. ${advice}`;
   }
 
   return {
