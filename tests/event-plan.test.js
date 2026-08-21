@@ -322,6 +322,39 @@ test('planEventTrade: 배수가 하한 미만이면 던지지 않고 매매하�
   }
 });
 
+test('planEventTrade: 허용 범위는 0.5~2다 — 경계 양쪽을 붙여 고정한다', () => {
+  // 위의 두 테스트는 1e9, 0.0001 같은 극단값만 써서 **범위가 느슨해지는 것**을 못 잡는다.
+  // 상한을 10으로, 하한을 0.1로 바꿔도 1e9는 여전히 걸리고 0.0001도 여전히 걸리기 때문이다.
+  // 배수는 등급표가 정한 익절폭을 보정하는 값이지 새로 정의하는 값이 아니므로,
+  // "익절 3배"(A급 900bps)나 "익절 1/5"(60bps, 왕복 16bps를 못 넘김)는 보정이 아니라
+  // 손상이다. 경계 안쪽은 통과하고 바깥쪽은 걸리는 것을 짝으로 붙여야 범위 자체가 고정된다.
+  const plan = (multiplier) =>
+    planEventTrade({ ...base, marketContext: { regime: 'neutral', multiplier }, grade: 'A', direction: 'bullish' });
+
+  // 경계값은 포함이다(< MIN, > MAX가 기준).
+  assert.equal(plan(2).executable, true, '배수 2는 상한 자신이라 통과해야 한다');
+  assert.equal(plan(0.5).executable, true, '배수 0.5는 하한 자신이라 통과해야 한다');
+  assert.equal(plan(2).takeProfitBps, 600, 'A급 300bps × 2');
+  assert.equal(plan(0.5).takeProfitBps, 150, 'A급 300bps × 0.5');
+
+  // 경계 바깥은 걸린다. 상한이 10이 되면 3이, 하한이 0.1이 되면 0.2가 통과해버린다.
+  for (const multiplier of [2.1, 3, 9]) {
+    const p = plan(multiplier);
+    assert.equal(p.executable, false, `배수 ${multiplier}는 상한 밖이다`);
+    assert.equal(p.takeProfitBps, null, `배수 ${multiplier}로 익절폭이 만들어졌다`);
+    assert.match(p.reason, /배수/);
+  }
+  for (const multiplier of [0.49, 0.2, 0.11]) {
+    const p = plan(multiplier);
+    assert.equal(p.executable, false, `배수 ${multiplier}는 하한 밖이다`);
+    assert.equal(p.takeProfitBps, null, `배수 ${multiplier}로 익절폭이 만들어졌다`);
+    assert.match(p.reason, /배수/);
+  }
+
+  // 이유 문구에도 실제 범위가 적혀야 한다 — 상수를 바꾸면 사람이 읽는 숫자도 따라간다.
+  assert.match(plan(3).reason, /0\.5~2/, '허용 범위를 사람이 읽을 수 있게 적는다');
+});
+
 test('planEventTrade: 실제로 쓰는 배수는 모두 허용 범위 안이다', () => {
   // 배수 범위 검증은 손상된 시황을 막으려고 넣은 것이지 정상 시황을 막으려는 게
   // 아니다. MULTIPLIERS를 범위 밖으로 키우면 그 국면의 매매가 통째로, 그것도
