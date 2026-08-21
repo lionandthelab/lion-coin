@@ -663,6 +663,26 @@ test('sendMessage: 429면 retry_after를 에러에 실어 준다', async () => {
   );
 });
 
+test('sendMessage: HTTP 200인데 ok:false여도 retry_after를 실어 준다', async () => {
+  // 텔레그램은 거부를 HTTP 오류로만 돌려주지 않는다 — **200에 ok:false**로 오는 경로가
+  // 따로 있고, rate limit도 그렇게 올 수 있다. !res.ok 경로에서만 백오프를 챙기면
+  // 이쪽 호출부는 기다릴 초를 못 받아 눈을 감고 즉시 재시도하고, 밴이 더 길어진다.
+  // 이 경로에는 테스트가 아예 없어서 attachRetryAfter를 지워도 초록이었다.
+  const impl = stubFetch(() => okResponse(leakyProxyBody(429, { parameters: { retry_after: 23 } })));
+  await assert.rejects(
+    () => sendMessage({ token: FAKE_TOKEN, chatId: 1, text: 'hi', fetchImpl: impl }),
+    (err) => {
+      assert.equal(err.status, 200, 'HTTP는 성공인데 본문이 거부인 경로다');
+      assert.equal(err.retryAfter, 23, `백오프 초를 못 전달했다: ${err.retryAfter}`);
+      assert.match(err.message, /429/, '거부 코드는 남긴다');
+      // 이 경로도 본문을 message에 붙이면 안 된다 — 같은 프록시 유출 위협이 걸린다.
+      assert.ok(!err.message.includes(FAKE_TOKEN), `토큰 유출: ${err.message}`);
+      assert.ok(!err.message.includes('api.telegram.org'), `URL 유출: ${err.message}`);
+      return true;
+    }
+  );
+});
+
 test('sendMessage: retry_after가 없으면 숫자를 지어내지 않는다', async () => {
   // 0으로 위장하면 호출부가 "지금 바로 재시도해도 된다"로 읽는다.
   const impl = stubFetch(() => ({ ok: false, status: 500, json: async () => ({ ok: false, error_code: 500 }) }));
