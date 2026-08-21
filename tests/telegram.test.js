@@ -46,6 +46,10 @@ function stubFetch(responder) {
   return impl;
 }
 
+// 표식 이모지는 대부분 서로게이트 쌍이다. text[0]으로 비교하면 🔥(D83D DD25)와
+// 🚨(D83D DEA8)가 같은 값으로 보여, 방향 구분이 깨져도 테스트가 초록이 된다.
+const firstGlyph = (text) => Array.from(text)[0];
+
 const okResponse = (body = { ok: true, result: { message_id: 7 } }) => ({
   ok: true,
   status: 200,
@@ -208,7 +212,9 @@ test('formatEventAlert: 악재는 호재와 다른 표식을 쓴다', () => {
     event: { title: '커브(CRV) KRW, USDT 마켓 디지털 자산 추가', source: 'upbit', at: REAL_AT_EPOCH },
     material: { grade: 'S', kind: '원화상장', direction: 'bullish', tickers: ['CRV'] },
   });
-  assert.notEqual(bearish[0], bullish[0], `같은 S급이어도 방향이 다르면 표식이 달라야 한다: ${bearish[0]}`);
+  // 이모지는 서로게이트 쌍이라 [0]으로 자르면 🔥와 🚨가 똑같은 D83D로 보인다.
+  // 첫 "글자"는 코드포인트 단위로 비교해야 한다.
+  assert.notEqual(firstGlyph(bearish), firstGlyph(bullish), `같은 S급이어도 방향이 다르면 표식이 달라야 한다: ${firstGlyph(bearish)}`);
   assert.ok(!bearish.startsWith('🔥'), `악재에 호재 표식: ${bearish.split('\n')[0]}`);
   assert.ok(bullish.startsWith('🔥'), bullish.split('\n')[0]);
   // 이모지가 죽는 환경(일부 잠금화면·이메일 게이트웨이)에서도 방향이 남아야 한다.
@@ -236,7 +242,7 @@ test('formatEventAlert: 실제 분류기 출력에서 악재와 호재의 첫 �
 
   const badLine = formatEventAlert({ event: { title: 'x', source: 'bithumb' }, material: bad }).split('\n')[0];
   const goodLine = formatEventAlert({ event: { title: 'y', source: 'upbit' }, material: good }).split('\n')[0];
-  assert.notEqual(badLine[0], goodLine[0], `${badLine} / ${goodLine}`);
+  assert.notEqual(firstGlyph(badLine), firstGlyph(goodLine), `${badLine} / ${goodLine}`);
 });
 
 // M5 재현: event-sources.js는 at을 epoch ms 숫자로 내보내므로 프로덕션 알림은
@@ -505,7 +511,7 @@ test('buildSendUrl: bot<token>/<method> 형태를 만든다', () => {
 });
 
 test('buildSendUrl: 토큰이 비면 TypeError이고 메시지에 토큰이 없다', () => {
-  // 이 단언은 한때 needle이 ' '(NUL)으로 폴백해 **무조건 통과**했다.
+  // 이 단언은 한때 needle이 \u0000(NUL)으로 폴백해 **무조건 통과**했다.
   // 어떤 문자열도 NUL을 포함하지 않으므로, 구현이 토큰을 통째로 찍어도 초록이었다.
   // 그래서 needle을 폴백시키지 않고, 값이 실제로 있을 때만 포함 여부를 묻는다.
   const bads = ['', '   ', null, undefined, 123, FAKE_TOKEN.replace(':', ' '), '123:abc?x', '\t\n'];
