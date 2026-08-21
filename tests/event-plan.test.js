@@ -504,6 +504,42 @@ test('planEventTrade: 비중을 올리면 될 것처럼 보이지만 자본 한�
   assert.match(p.reason, /자본 한도/);
 });
 
+test('planEventTrade: 자본 자체가 최소 주문금액보다 작으면 비중 조언을 하지 않는다', () => {
+  // cappedByCapital은 명목 > 자본(엄격 부등호)이다. 명목이 자본과 **정확히 같으면**
+  // false가 되어 "비중을 올리세요" 분기로 빠지는데, 레버리지가 없으므로 명목은
+  // 자본을 넘을 수 없다 — 자본이 최소 주문금액보다 작으면 비중은 답이 될 수 없다.
+  // 하필 기본 설정(riskPct 1, B급 손절 100bps)이 정확히 명목 = 자본인 경우다.
+  const p = planEventTrade({
+    ...base, capital: 3000, riskPct: 1, grade: 'B', direction: 'bullish',
+  });
+  assert.equal(p.executable, false);
+  assert.doesNotMatch(p.reason, /위험 비중을 [\d.]+% 이상으로 올리/,
+    `자본 ${3000}원으로는 어떤 비중도 5,000원을 만들지 못한다: ${p.reason}`);
+  assert.match(p.reason, /자본/);
+});
+
+test('planEventTrade: 비중 조언은 그대로 따르면 실제로 통해야 한다', () => {
+  // 조언이 틀리면 이 문자열은 존재 이유를 잃는다. 격자로 훑어 조언대로
+  // 다시 계산했을 때 정말 최소 주문금액을 넘는지 확인한다.
+  const advised = /위험 비중을 ([\d.]+)% 이상으로 올리/;
+  let checked = 0;
+  for (const grade of ['S', 'A', 'B']) {
+    for (const capital of [1000, 3000, 4999, 5000, 8000, 20000, 39000, 100000]) {
+      for (const riskPct of [0.05, 0.1, 0.5, 1, 3, 10, 50]) {
+        const p = planEventTrade({ ...base, capital, riskPct, grade, direction: 'bullish' });
+        const m = p.executable ? null : advised.exec(p.reason || '');
+        if (!m) continue;
+        checked += 1;
+        const retry = planEventTrade({ ...base, capital, riskPct: Number(m[1]), grade, direction: 'bullish' });
+        assert.ok(retry.notional >= 5000,
+          `조언(${m[1]}%)을 따라도 명목 ${Math.round(retry.notional)}원 — `
+          + `자본 ${capital} · 비중 ${riskPct}% · ${grade}급`);
+      }
+    }
+  }
+  assert.ok(checked > 0, '비중 조언이 한 번도 나오지 않아 검증한 것이 없다');
+});
+
 test('planEventTrade: 위험 비중 상한으로도 못 넘으면 필요한 자본을 알려준다', () => {
   // 자본 50원. 비중을 100%까지 올려도 명목이 5,000원에 닿지 않는다.
   const p = planEventTrade({
