@@ -519,6 +519,32 @@ test('parseRss: pubDate의 GMT/UTC 문자 표기도 시각으로 읽는다', () 
   assert.equal(parseRss(mk('Fri, 21 Aug 2026 21:12:12 XYZ'), 'tokenpost')[0].at, null);
 });
 
+test('parseRss: 뜻이 둘인 시간대 약어(CST)는 단정하지 않는다', () => {
+  // CST는 미 중부(-0600)이자 중국 표준시(+0800)다. V8은 -0600으로 읽으므로
+  // 중화권 피드가 CST를 쓰면 시각이 **14시간 늦게** 찍힌다. 그 방향이 하필
+  // "오래된 공지가 방금 뜬 것처럼 보이는" 쪽이라, 신선도 필터를 통과해
+  // 이미 시장에 퍼진 재료로 진입하게 된다.
+  //
+  // 이 모듈은 KST를 임의로 +09:00이라 단정하지 않기로 이미 정해 두었다.
+  // 뜻이 둘인 약어에도 같은 규칙이 적용돼야 한다.
+  const mk = (d) => `<rss><channel><item><title>t</title><pubDate>${d}</pubDate></item></channel></rss>`;
+  assert.equal(parseRss(mk('Fri, 21 Aug 2026 21:12:12 CST'), 'tokenpost')[0].at, null);
+  assert.equal(parseRss(mk('Fri, 21 Aug 2026 21:12:12 CDT'), 'tokenpost')[0].at, null);
+});
+
+test('parseRss: 뜻이 하나인 미국 시간대는 계속 읽는다', () => {
+  // 모호한 것만 뺀다. 전부 빼면 그 피드가 통째로 사라지는 원래 문제로 돌아간다.
+  const mk = (d) => `<rss><channel><item><title>t</title><pubDate>${d}</pubDate></item></channel></rss>`;
+  assert.equal(
+    parseRss(mk('Fri, 21 Aug 2026 12:00:00 EST'), 'tokenpost')[0].at,
+    Date.parse('2026-08-21T17:00:00Z')
+  );
+  assert.equal(
+    parseRss(mk('Fri, 21 Aug 2026 12:00:00 PDT'), 'tokenpost')[0].at,
+    Date.parse('2026-08-21T19:00:00Z')
+  );
+});
+
 test('dedupeNewEvents: 배치가 maxSeen보다 커도 최신 공지부터 버리지 않는다', () => {
   // 업비트는 공지를 최신순으로 준다. 그래서 배치 안의 삽입 순서는 최신 → 오래된 것이고,
   // "앞쪽부터 버린다"는 절삭은 정확히 최신 공지를 먼저 지운다. 지워진 최신 공지는
