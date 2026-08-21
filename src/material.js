@@ -42,9 +42,29 @@ const hasKrwMarket = (c) => c.includes('KRW') || c.includes('원화');
 const isListing = (c) =>
   c.includes('신규거래지원') || c.includes('마켓추가') || c.includes('디지털자산추가') || c.includes('신규상장');
 
-// 위에서부터 먼저 맞는 규칙이 이긴다. 악재를 호재보다 앞에 두는 이유는
-// "거래지원 종료"가 "거래지원"을 포함하기 때문이다 — 순서가 곧 안전장치다.
+// 위에서부터 먼저 맞는 규칙이 이긴다. 순서가 곧 안전장치다. 두 종류의 포함
+// 관계를 순서로 푼다.
+//
+// 1) 좁은 악재가 넓은 악재를 포함한다: "거래지원 종료" ⊃ "거래지원".
+// 2) **해제 공지가 지정 공지를 포함한다**: "유의 종목 지정 해제" ⊃ "유의 종목 지정",
+//    "입출금 일시 중단 해제" ⊃ "입출금 일시 중단". 지정 공지가 난 종목에는 반드시
+//    해제 아니면 폐지가 뒤따르므로 이 계열은 드물지 않다. 방향이 정반대라
+//    놓치면 안도 랠리 국면에서 급락 신호를 내보낸다.
+//
+// 그리고 세 번째로, **호재 사유가 붙은 입출금 중단**이 있다. 거래소는 에어드랍·
+// 스냅샷·메인넷 스왑·하드포크를 거의 항상 입출금 중단 공지에 얹어서 낸다.
+// 같은 제목에 두 재료가 있으면 호재 쪽이 재료의 본질이다 — 입출금 중단은
+// 그 호재를 처리하기 위한 절차일 뿐이다. 그래서 호재 규칙을 입출금 중단보다
+// 위에 둔다.
 const RULES = [
+  {
+    kind: '거래유의해제',
+    direction: 'bullish',
+    grade: 'A',
+    // '유의종목지정'을 포함하므로 반드시 지정 규칙보다 위에 있어야 한다.
+    match: (c) => /유의종목지정.{0,4}해제/.test(c),
+    note: '유의 종목 지정이 풀렸다. 상장폐지 위험이 걷혀 안도 랠리가 나오지만 신규 상장만큼 크지는 않다',
+  },
   {
     kind: '거래유의',
     direction: 'bearish',
@@ -68,16 +88,6 @@ const RULES = [
     grade: 'S',
     match: (c) => c.includes('거래지원종료'),
     note: '거래 지원 종료는 사실상 상장폐지다. 즉각 급락한다',
-  },
-  {
-    kind: '입출금중단',
-    direction: 'bearish',
-    grade: 'B',
-    // '제한'은 제외한다. 중단·중지는 일시적 작업 공지지만 제한은 제도 안내라
-    // 종목 재료가 아니다.
-    // c는 공백이 제거된 형태라 '.'로 충분하다.
-    match: (c) => /입출금.{0,8}(중단|중지)/.test(c),
-    note: '보통 네트워크 업그레이드라 중립에 가깝지만, 차익거래 경로가 막혀 약악재로 본다',
   },
   {
     kind: '원화상장',
@@ -111,8 +121,29 @@ const RULES = [
     kind: '메인넷',
     direction: 'bullish',
     grade: 'B',
-    match: (c) => c.includes('메인넷'),
-    note: '메인넷 전환은 기대감을 만들지만 반영 속도가 느리다',
+    // 하드포크도 같은 계열이다 — 체인 업그레이드 기대감이고, 거래소는 둘 다
+    // 입출금 중단 공지에 얹어서 낸다.
+    match: (c) => c.includes('메인넷') || c.includes('하드포크'),
+    note: '메인넷 전환·하드포크는 기대감을 만들지만 반영 속도가 느리다',
+  },
+  {
+    kind: '입출금재개',
+    direction: 'bullish',
+    grade: 'C',
+    // '입출금중단'을 포함하므로 반드시 중단 규칙보다 위에 있어야 한다.
+    // 막혔던 차익거래 경로가 열리는 것이라 방향은 호재지만 폭은 매우 작다.
+    match: (c) => /입출금.{0,12}(해제|재개)/.test(c),
+    note: '막혔던 입출금이 다시 열린다. 방향은 호재지만 가격 영향은 거의 없다',
+  },
+  {
+    kind: '입출금중단',
+    direction: 'bearish',
+    grade: 'B',
+    // '제한'은 제외한다. 중단·중지는 일시적 작업 공지지만 제한은 제도 안내라
+    // 종목 재료가 아니다.
+    // c는 공백이 제거된 형태라 '.'로 충분하다.
+    match: (c) => /입출금.{0,8}(중단|중지)/.test(c),
+    note: '보통 네트워크 업그레이드라 중립에 가깝지만, 차익거래 경로가 막혀 약악재로 본다',
   },
   {
     kind: '파트너십',
@@ -129,6 +160,17 @@ const RULES = [
     note: '이벤트·프로모션은 가격 영향이 거의 없다',
   },
 ];
+
+// 카테고리만 보고 만드는 최후 수단 규칙. RULES에 넣지 않는다 — 제목 대조로는
+// 절대 맞지 않아야 하기 때문이다. 방향을 모르는 채로 매매에 태울 수는 없으므로
+// direction은 neutral이고(호출자가 neutral을 매매에서 제외한다), 등급도 확신
+// 없는 만큼 낮춰 사람이 눈으로 확인할 수 있게만 남긴다.
+const CAUTION_CATEGORY_RULE = {
+  kind: '거래유의계열',
+  direction: 'neutral',
+  grade: 'B',
+  note: '거래소가 유의 계열로 분류했지만 제목에서 지정·해제·폐지 중 무엇인지 읽지 못했습니다. 방향을 단정하지 않습니다',
+};
 
 // stale이면 한 급씩 내린다. B·C는 애초에 즉발성이 약해서, 한 급 더 내려가면
 // 남는 우위가 없다 — 매매 대상에서 뺀다.
@@ -153,14 +195,18 @@ function toKnownSet(knownSymbols) {
   return set;
 }
 
-// 제목의 괄호 안에서 티커를 뽑되, 실제 상장 심볼에 있는 것만 남긴다.
+// 마켓 이름으로 제목에 등장하는 심볼들. 이 이름들은 그 자체로 거래 가능한
+// 심볼이기도 해서 이름 대조로는 구분할 수 없다 — 위치로만 판단할 수 있다.
+const MARKET_NAMES = new Set(['KRW', 'BTC', 'ETH', 'USDT', 'USDC', 'BNB']);
+
+// 제목의 괄호 안에서 티커 후보를 뽑는다. 상장 심볼 대조는 하지 않는다 —
+// 신규 상장 심볼은 정의상 상장 목록에 없기 때문이다(extractTickers 주석 참고).
 //
 // 괄호 밖을 보지 않는 것은 의도한 선택이다. "8월 2주차 GAS 에어드랍 지급 안내"의
 // GAS는 이 규칙으로 놓친다. 그러나 괄호 밖 대문자를 받으면 "총 상금 1 BTC",
 // "BTC, USDT 마켓 신규 거래지원"이 전부 BTC 신호가 된다 — 놓치는 쪽이 싸다.
-function extractTickers(title, knownSymbols) {
+function extractCandidateTickers(title) {
   assertTitle(title);
-  const known = toKnownSet(knownSymbols);
 
   // "Ontology 네트워크 계열 ... 입출금 중단"은 체인 전체 공지다. 괄호 안의
   // 체인 이름(BNB Smart Chain)을 종목 재료로 승격시키면 28종 공지가 BNB 단독
@@ -171,18 +217,38 @@ function extractTickers(title, knownSymbols) {
   const seen = new Set();
   for (const match of title.matchAll(/\(([^()]*)\)/g)) {
     const group = match[1];
-    // "(USDT 마켓)"의 USDT는 진짜 심볼이라 대조로는 못 거른다. 마켓 표기임을
-    // 알리는 단어가 같은 괄호 안에 있으면 그 괄호는 통째로 버린다.
-    if (group.includes('마켓')) continue;
-    for (const token of group.split(/[^A-Za-z0-9]+/)) {
-      if (!TICKER_SHAPE.test(token)) continue;
-      if (!known.has(token)) continue;
-      if (seen.has(token)) continue;
-      seen.add(token);
-      found.push(token);
+    const tokens = [...group.matchAll(/[A-Za-z0-9]+/g)].map((t) => ({ text: t[0], at: t.index }));
+
+    // "(SOPH, KRW 마켓)"처럼 티커와 마켓명이 한 괄호에 섞여 들어온다. 예전에는
+    // '마켓'이 보이면 괄호를 통째로 버려서 SOPH까지 잃었다. 마켓명은 언제나
+    // '마켓' **바로 앞**에 붙으므로, 그 위치에서 뒤로 거슬러 올라가며 마켓
+    // 이름인 토큰만 걷어낸다. "(KRW, USDT 마켓)"은 둘 다 걷히고,
+    // "(SOPH, KRW 마켓)"은 KRW에서 멈춰 SOPH가 살아남는다.
+    const dropped = new Set();
+    for (const marketWord of group.matchAll(/마켓/g)) {
+      let i = tokens.length - 1;
+      while (i >= 0 && tokens[i].at >= marketWord.index) i -= 1;
+      while (i >= 0 && MARKET_NAMES.has(tokens[i].text.toUpperCase())) {
+        dropped.add(i);
+        i -= 1;
+      }
     }
+
+    tokens.forEach((token, i) => {
+      if (dropped.has(i)) return;
+      if (!TICKER_SHAPE.test(token.text)) return;
+      if (seen.has(token.text)) return;
+      seen.add(token.text);
+      found.push(token.text);
+    });
   }
   return found;
+}
+
+// 후보 중 실제 상장 심볼에 있는 것만 남긴다 — 지금 이 거래소에서 살 수 있는 것.
+function extractTickers(title, knownSymbols) {
+  const known = toKnownSet(knownSymbols);
+  return extractCandidateTickers(title).filter((t) => known.has(t));
 }
 
 // category는 업비트가 문자열('거래'), 빗썸이 배열(['거래유의'])로 준다.
@@ -196,7 +262,16 @@ function classifyMaterial({ title, category, source, knownSymbols } = {}) {
   assertTitle(title);
   const c = compact(title);
   const cat = categoryText(category);
-  const tickers = extractTickers(title, knownSymbols);
+  const known = toKnownSet(knownSymbols);
+  // 두 필드의 의미가 다르다.
+  //   candidateTickers — 제목에서 추출한 전체. 검증하지 않았다. "이 재료가 어느
+  //     종목 이야기인가"에 답한다. 신규 상장처럼 아직 이 거래소에 없는 심볼도 남는다.
+  //   tickers — 그중 상장 목록 대조를 통과한 것. "지금 살 수 있는가"에 답한다.
+  // 호출자는 이 차이로 두 상황을 구분한다: 업비트 상장 공지인데 그 코인이 빗썸에
+  // 이미 있으면 매매 가능(주된 플레이), 빗썸 자체 신규 상장이면 아직 못 사지만
+  // 재료로 기록은 남긴다. tickers만 보고 버리면 명세가 최우선으로 꼽은 재료를 잃는다.
+  const candidateTickers = extractCandidateTickers(title);
+  const tickers = candidateTickers.filter((t) => known.has(t));
 
   const staleMarker = STALE_MARKERS.find((marker) => c.includes(marker)) ?? null;
 
@@ -204,7 +279,12 @@ function classifyMaterial({ title, category, source, knownSymbols } = {}) {
 
   // 제목에 키워드가 없어도 거래소가 분류해 준 카테고리가 남아 있다. 빗썸의
   // '거래유의', 업비트의 '이벤트'가 그렇다 — 제목 표현이 바뀌어도 이쪽은 버틴다.
-  if (!rule && cat.includes('거래유의')) rule = RULES.find((r) => r.kind === '거래유의');
+  //
+  // 다만 카테고리는 **방향을 말해 주지 않는다**. 빗썸은 지정도 해제도 폐지도
+  // 전부 '거래유의' 카테고리에 넣는다. 여기서 bearish로 못박으면 해제 공지가
+  // 카테고리만으로 S급 악재로 고정된다 — 정확히 반대 방향이다. 그래서 이
+  // 폴백은 제목 규칙이 아무것도 못 맞췄을 때만 쓰이고, 방향은 비워 둔다.
+  if (!rule && cat.includes('거래유의')) rule = CAUTION_CATEGORY_RULE;
   if (!rule && cat.includes('이벤트')) rule = RULES.find((r) => r.kind === '이벤트');
 
   const where = source ? `${source} 공지` : '공지';
@@ -215,6 +295,7 @@ function classifyMaterial({ title, category, source, knownSymbols } = {}) {
       direction: 'neutral',
       kind: '기타',
       tickers,
+      candidateTickers,
       stale: staleMarker !== null,
       reason: `${where}: 가격을 움직이는 재료로 볼 근거가 없습니다 — 매매 대상이 아닙니다.`,
     };
@@ -224,7 +305,13 @@ function classifyMaterial({ title, category, source, knownSymbols } = {}) {
   const grade = staleMarker ? STALE_DOWNGRADE[baseGrade] : baseGrade;
 
   const parts = [`${where}: ${rule.kind} — ${rule.note}.`];
-  if (tickers.length) parts.push(`대상 ${tickers.join(', ')}.`);
+  if (tickers.length) {
+    parts.push(`대상 ${tickers.join(', ')}.`);
+  } else if (candidateTickers.length) {
+    // 재료의 대상은 알지만 상장 목록에 없다. 신규 상장이면 이게 정상이다 —
+    // "티커를 못 찾았다"와 구분해서 남겨야 사후에 판단이 선다.
+    parts.push(`대상 ${candidateTickers.join(', ')} — 상장 목록에 없어 즉시 매수는 불가합니다.`);
+  }
   if (staleMarker) {
     parts.push(
       grade === null
@@ -242,9 +329,10 @@ function classifyMaterial({ title, category, source, knownSymbols } = {}) {
     direction: rule.direction,
     kind: rule.kind,
     tickers,
+    candidateTickers,
     stale: staleMarker !== null,
     reason: parts.join(' '),
   };
 }
 
-module.exports = { extractTickers, classifyMaterial, STALE_MARKERS };
+module.exports = { extractTickers, extractCandidateTickers, classifyMaterial, STALE_MARKERS };
