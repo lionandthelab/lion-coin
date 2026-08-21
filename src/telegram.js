@@ -178,18 +178,22 @@ function pickTitle(event) {
 // event-sources.js의 EVENT_KEYS는 id·source·at·title·category·url·updatedAt 뿐이고
 // event-trader.js는 그 정규화 이벤트를 그대로 넘긴다. event.symbol만 읽으면 실제
 // 파이프라인에서는 첫 줄에 종목이 영영 찍히지 않는다.
-// tryEnter가 material.tickers[0]으로 주문을 내므로 여기서도 같은 자리를 읽는다 —
+// tryEnter가 material.tickers[0]으로 주문을 내므로 그 자리를 **먼저** 읽는다 —
 // 알림이 가리키는 종목과 주문이 나가는 종목이 어긋나면 안 된다.
+//
+// 비어 있으면 candidateTickers로 내려간다. 신규 상장·상장폐지 종목은 정의상
+// 거래소 목록에 없어 tickers가 항상 비고, 그게 이 전략이 가장 중요하게 꼽는
+// 재료다. 어긋날 위험은 없다 — tickers가 비면 관문이 진입 자체를 막으므로
+// 대조할 주문이 존재하지 않는다.
 // event.symbol은 정규화를 거치지 않은 원본 페이로드를 직접 넘기는 호출부를 위한
 // 대체 경로로만 남긴다.
 function pickSymbol(event, material) {
-  const traded = material && Array.isArray(material.tickers) ? material.tickers[0] : null;
+  const first = (v) => (Array.isArray(v) && typeof v[0] === 'string' && v[0].trim() ? v[0] : null);
+  const m = material && typeof material === 'object' ? material : {};
   const raw =
-    typeof traded === 'string' && traded.trim()
-      ? traded
-      : typeof event.symbol === 'string'
-        ? event.symbol
-        : '';
+    first(m.tickers)
+    || first(m.candidateTickers)
+    || (typeof event.symbol === 'string' ? event.symbol : '');
   return raw.trim() ? raw.trim().toUpperCase() : null;
 }
 

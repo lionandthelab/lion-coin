@@ -29,6 +29,7 @@ const sources = require('../src/event-sources');
 const eventPlan = require('../src/event-plan');
 const fsm = require('../src/event-engine');
 const telegram = require('../src/telegram');
+const gate = require('../src/trade-gate');
 const writer = require('../src/review-writer');
 const { summarizeDay, proposeCalibration, postExitKey } = require('../src/daily-review');
 
@@ -41,8 +42,6 @@ const HAS_KEYS = Boolean(process.env.BITHUMB_API_KEY && process.env.BITHUMB_SECR
 const TG_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const TG_CHAT = process.env.TELEGRAM_CHAT_ID;
 const TG_ON = Boolean(config.telegramEnabled && TG_TOKEN && TG_CHAT);
-
-const GRADE_RANK = { S: 4, A: 3, B: 2, C: 1 };
 
 let mode = 'stopped'; // stopped | watching | live
 let state = fsm.createEventState();
@@ -162,19 +161,6 @@ async function collectEvents() {
   return all;
 }
 
-// 이 재료로 매매할 것인가. 판단 근거를 함께 돌려줘 화면과 텔레그램에 남긴다.
-function shouldTrade(m) {
-  if (!m.grade) return { ok: false, why: '매매 대상 아님' };
-  if (m.direction === 'bearish') return { ok: false, why: '악재 — 현물은 하락에 베팅할 수 없음' };
-  if (m.direction === 'neutral') return { ok: false, why: '방향성 없음' };
-  if (m.stale && !config.tradeStaleEvents) return { ok: false, why: '이미 반영된 후속 공지' };
-  if ((GRADE_RANK[m.grade] || 0) < (GRADE_RANK[config.minGrade] || 0)) {
-    return { ok: false, why: `${m.grade}급은 하한(${config.minGrade}급) 미만` };
-  }
-  if (!m.tickers.length) return { ok: false, why: '거래 가능한 티커를 찾지 못함' };
-  return { ok: true, why: null };
-}
-
 async function pollOnce() {
   await refreshSymbols();
   if (!knownSymbols.length) return;
@@ -212,10 +198,13 @@ async function pollOnce() {
     const m = material.classifyMaterial({
       title: ev.title, category: ev.category, source: ev.source, knownSymbols,
     });
-    const decision = shouldTrade(m);
+    const decision = gate.shouldTrade(m, config);
     const row = {
       ...ev, grade: m.grade, direction: m.direction, kind: m.kind,
-      tickers: m.tickers, stale: m.stale,
+      // 후보 티커도 남긴다. 거래 불가 종목의 재료가 화면에서 이름을 잃으면
+      // 무엇이 지나갔는지 사후에 확인할 방법이 없다.
+      tickers: m.tickers, candidateTickers: m.candidateTickers || [],
+      target: gate.describeTarget(m), stale: m.stale,
       reason: decision.ok ? null : decision.why, traded: false,
     };
     events.unshift(row);
