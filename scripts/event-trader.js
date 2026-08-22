@@ -31,6 +31,8 @@ const fsm = require('../src/event-engine');
 const telegram = require('../src/telegram');
 const gate = require('../src/trade-gate');
 const snapshot = require('../src/market-snapshot');
+const orphan = require('../src/orphan-check');
+const store = require('../src/state-store');
 const writer = require('../src/review-writer');
 const { summarizeDay, proposeCalibration, postExitKey } = require('../src/daily-review');
 
@@ -77,6 +79,7 @@ const postExits = new Map();   // 'SYM@진입시각' → {symbol, until, highest
 // 가짜 거래 한 줄이 그대로 근거로 쓰인다.
 const IMPROVE_DIR = process.env.EVENT_STATE_DIR || path.join(__dirname, '..', 'harness', 'improve');
 const TRADE_LOG = path.join(IMPROVE_DIR, 'trade-log.jsonl');
+const STATE_FILE = path.join(IMPROVE_DIR, 'daemon-state.json');
 
 function kstDate(ms = Date.now()) {
   return new Date(ms + 9 * 3600 * 1000).toISOString().slice(0, 10);
@@ -99,6 +102,25 @@ function persistDay() {
   });
   saveJson(path.join(IMPROVE_DIR, 'mode.json'), { mode });
   saveJson(path.join(IMPROVE_DIR, 'position.json'), positionView());
+  persistState();
+}
+
+// **재시작이 상태를 지우지 않게 한다.**
+// 이걸 안 하면 거래소에 포지션이 남은 채 상태 기계는 IDLE로 시작하고, 그 포지션은
+// 익절·손절·시간초과 어느 것도 받지 못한다. 실거래를 재시작 후에도 이어가려면
+// 상태 복원이 모드 복원보다 먼저다.
+//
+// 포지션이 바뀌는 모든 지점에서 부른다 — 크래시는 예고하지 않는다.
+function persistState() {
+  try {
+    saveJson(STATE_FILE, store.buildSnapshot({
+      state, mode, seenIds, postExits, trades, events, marketContextAt,
+    }));
+  } catch (err) {
+    // 저장 실패가 매매를 멈추게 하지는 않는다. 다만 조용히 넘어가지도 않는다 —
+    // 저장이 안 되고 있다는 사실을 모르면 다음 재시작에서 상태를 통째로 잃는다.
+    recordError(`상태 저장 실패: ${err.message}`);
+  }
 }
 
 function recordError(message) {
@@ -226,6 +248,10 @@ async function pollOnce() {
 
     if (decision.ok) await tryEnter(row, m);
   }
+
+  // 재료 기억(seenIds)을 잃으면 재시작 직후 이미 지나간 공지를 새 재료로 다시
+  // 잡는다. 이 폴링에서 무언가 처리했으면 저장한다.
+  persistState();
 }
 
 async function tryEnter(row, m) {
@@ -298,6 +324,9 @@ async function tryEnter(row, m) {
   }
 
   row.traded = true;
+  // 진입 직후가 가장 중요한 저장 시점이다. 여기서 크래시가 나면 거래소에는
+  // 포지션이 있는데 이 프로세스만 모르는 상태가 된다.
+  persistState();
   await notify(telegram.formatEntryAlert({
     symbol, plan, event: row, material: m, simulated: mode !== 'live',
   }));
@@ -392,6 +421,7 @@ async function priceTick() {
       // 사라진 게 아니라 그대로 남아 있으므로 HOLDING으로 되돌려 재시도한다.
       const r2 = fsm.onExitFailed(state, { reason: err.message, now: Date.now() });
       state = r2.state;
+      persistState();   // 실패 횟수와 되돌아온 상태를 잃지 않는다
       const a = r2.action || {};
       // 연속 실패가 상한을 넘으면 알림의 성격이 바뀐다 — 재시도는 계속되지만
       // 거래소가 계속 거절하는 것은 사람이 손으로 나와야 하는 상황이다.
@@ -646,6 +676,9 @@ const server = http.createServer(async (req, res) => {
     const prev = mode;
     mode = next;
     if (mode === 'stopped') stopLoops(); else startLoops();
+    // 재시작이 이 선택을 꺼버리지 않게 즉시 저장한다. 실거래를 켜자마자 크래시가
+    // 나면 다시 감시 모드로 돌아가는데, 그건 사람이 내린 결정이 아니다.
+    persistState();
     json(res, 200, { ok: true, mode });
     // 모드 전환은 반드시 알린다. 화면을 안 보고 있을 때 시스템이 실거래로 넘어갔는지
     // 멈췄는지를 모르면 안 된다 — 이 알림이 곧 생존 신호이기도 하다.
@@ -685,9 +718,67 @@ module.exports = {
 
 if (require.main !== module) return;
 
+// 기동 복원. **순서가 곧 안전 순서다: 상태를 먼저 되살리고, 그 다음에 모드다.**
+// 모드를 먼저 켜면 상태가 비어 있는 채로 폴링이 돌아 이전 포지션을 모르고
+// 새 재료에 또 진입한다. 크래시 루프에서 감시받지 않는 포지션이 쌓이는 경로다.
+function restoreOnStartup() {
+  let snap = null;
+  try {
+    if (fs.existsSync(STATE_FILE)) snap = JSON.parse(fs.readFileSync(STATE_FILE, 'utf8'));
+  } catch (err) {
+    recordError(`저장된 상태를 읽지 못했습니다: ${err.message}`);
+  }
+
+  const r = store.restoreSnapshot(snap);
+  const lines = [];
+
+  if (r.ok) {
+    state = r.state;
+    seenIds = r.seenIds;
+    // 이미 본 공지를 기억하고 있으므로 기준선을 다시 세울 필요가 없다.
+    // 그래도 나이 필터는 그대로 돌아, 내려가 있는 동안 나온 옛 재료는 걸러진다.
+    primed = seenIds.size > 0;
+    for (const [k, v] of r.postExits) postExits.set(k, v);
+    trades.push(...r.trades);
+    events.push(...r.events);
+    marketContextAt = r.marketContextAt;
+    lines.push(`  상태 복원: 재료 기억 ${seenIds.size}건 · 거래 ${trades.length}건 · 사후추적 ${postExits.size}건`);
+    if (r.notice) { lines.push(`\n${r.notice}\n`); notify(telegram.formatHaltAlert({ reason: r.notice })); }
+  } else if (r.warning) {
+    // 조용히 깨끗해지는 것이 이 시스템에서 가장 비싼 실패다.
+    lines.push(`  ⚠ ${r.warning}`);
+    recordError(r.warning);
+    notify(telegram.formatHaltAlert({ reason: r.warning }));
+    // 상태는 못 살렸지만 마지막 포지션 기록은 따로 확인해 사람을 부른다.
+    try {
+      const p = path.join(IMPROVE_DIR, 'position.json');
+      const saved = fs.existsSync(p) ? JSON.parse(fs.readFileSync(p, 'utf8')) : null;
+      const o = orphan.checkStrandedPosition(saved);
+      if (o.stranded) {
+        lines.push(`\n${o.message}\n`);
+        notify(telegram.formatHaltAlert({ reason: o.message }));
+      }
+    } catch { /* 기록이 없거나 깨졌으면 위 경고로 충분하다 */ }
+  }
+
+  // 이제 모드. 저장된 값이 .env의 승인을 이기지 않는다.
+  const m = store.resolveStartupMode({
+    saved: r.ok ? r.mode : null, liveApproved: LIVE_APPROVED, hasKeys: HAS_KEYS,
+  });
+  mode = m.mode;
+  if (m.warning) { lines.push(`  ⚠ ${m.warning}`); recordError(m.warning); }
+  if (m.notice) lines.push(`  ${m.notice}`);
+  if (mode !== 'stopped') startLoops();
+  if (m.notice || m.warning) notify(m.notice || m.warning);
+
+  return lines;
+}
+
 server.listen(PORT, () => {
+  const restored = restoreOnStartup();
   console.log(`유목민식 이벤트 단타: http://localhost:${PORT}`);
-  console.log(`  모드: stopped (시작 버튼은 감시로만 진입)`);
+  for (const l of restored) console.log(l);
+  console.log(`  모드: ${mode}${mode === 'stopped' ? ' (시작 버튼은 감시로만 진입)' : ' (재시작 전 상태를 이어받음)'}`);
   console.log(`  빗썸 키: ${HAS_KEYS ? '설정됨' : '없음'} · 실거래 승인: ${LIVE_APPROVED ? '켜짐' : '꺼짐'}`);
   console.log(`  텔레그램: ${TG_ON ? '켜짐' : '꺼짐'}`);
   console.log(`  매매 하한 등급: ${config.minGrade} · 폴링 ${config.pollIntervalSec}초`);
