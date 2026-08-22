@@ -10,6 +10,7 @@ const {
   logFileName,
   parseCoinosWallet,
   validateCoinosTokenFormat,
+  selectWalletProvider,
 } = require('../harness/lib/core');
 
 // ---- pickNextTask ----
@@ -229,4 +230,59 @@ test('validateCoinosTokenFormat: Blink 키를 잘못 넣으면 그 사실을 알
   const r = validateCoinosTokenFormat('blink_abc123');
   assert.equal(r.valid, false);
   assert.match(r.reason, /Blink/);
+});
+
+// ---- selectWalletProvider ----
+// check-goal.js가 process.env에서 공급자를 고를 때 쓰는 로직을 분리했다.
+// 형식이 틀린 옛 키가 남아 있어도 네트워크 호출까지 가지 않고 그 자리에서 걸러낸다
+// (실제로 Coinos 전환 후에도 옛 BLINK_API_KEY="ak_v2_..."가 .env에 남아 매 회차 401로 죽던 사고).
+
+test('selectWalletProvider: 아무 env도 없으면 null', () => {
+  assert.equal(selectWalletProvider({}), null);
+});
+
+test('selectWalletProvider: COINOS_TOKEN이 있으면 coinos를 고른다 (형식 정상)', () => {
+  const jwt = 'eyJhbGciOiJIUzI1NiJ9.eyJpZCI6ImFiYyJ9.c2lnbmF0dXJl';
+  const r = selectWalletProvider({ COINOS_TOKEN: jwt });
+  assert.equal(r.provider, 'coinos');
+  assert.equal(r.token, jwt);
+  assert.equal(r.formatValid, true);
+});
+
+test('selectWalletProvider: COINOS_TOKEN과 BLINK_API_KEY가 둘 다 있으면 coinos 우선', () => {
+  const jwt = 'eyJhbGciOiJIUzI1NiJ9.eyJpZCI6ImFiYyJ9.c2lnbmF0dXJl';
+  const r = selectWalletProvider({ COINOS_TOKEN: jwt, BLINK_API_KEY: 'blink_abcdefgh12345' });
+  assert.equal(r.provider, 'coinos');
+});
+
+test('selectWalletProvider: COINOS_TOKEN이 옛 서비스 키 형식이면 provider는 coinos로 두되 formatValid=false로 보고한다 (조용히 다른 공급자로 안 넘어감)', () => {
+  const r = selectWalletProvider({ COINOS_TOKEN: 'ak_v2_Yabcdefgh12345', BLINK_API_KEY: 'blink_abcdefgh12345' });
+  assert.equal(r.provider, 'coinos');
+  assert.equal(r.formatValid, false);
+  assert.match(r.formatReason, /Blink/);
+});
+
+test('selectWalletProvider: COINOS_TOKEN 없고 BLINK_API_KEY만 있으면 blink를 고른다', () => {
+  const r = selectWalletProvider({ BLINK_API_KEY: 'blink_abcdefgh12345' });
+  assert.equal(r.provider, 'blink');
+  assert.equal(r.formatValid, true);
+});
+
+test('selectWalletProvider: BLINK_API_KEY 형식이 틀리면 formatValid=false와 이유를 함께 돌려준다', () => {
+  const r = selectWalletProvider({ BLINK_API_KEY: 'ak_v2_Yabcdefgh12345' });
+  assert.equal(r.provider, 'blink');
+  assert.equal(r.formatValid, false);
+  assert.match(r.formatReason, /blink_/);
+});
+
+test('selectWalletProvider: Coinos·Blink 둘 다 없고 LNbits URL+키가 있으면 lnbits를 고른다', () => {
+  const r = selectWalletProvider({ LNBITS_URL: 'https://lnbits.example', LNBITS_READ_KEY: 'k1' });
+  assert.equal(r.provider, 'lnbits');
+  assert.equal(r.url, 'https://lnbits.example');
+  assert.equal(r.key, 'k1');
+  assert.equal(r.formatValid, true);
+});
+
+test('selectWalletProvider: LNBITS_URL만 있고 키가 없으면 아무것도 못 고른다', () => {
+  assert.equal(selectWalletProvider({ LNBITS_URL: 'https://lnbits.example' }), null);
 });
