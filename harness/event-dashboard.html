@@ -534,7 +534,12 @@ function renderControls(s) {
   if (s.errors && s.errors.length) {
     note.push('<span style="color:var(--down)">최근 오류: ' + esc(s.errors[0].message || s.errors[0]) + '</span>');
   }
-  if (!note.length) note.push(s.mode === 'live' ? '실거래 진행 중입니다.' : '실거래 준비됨 — 버튼은 직접 누르셔야 합니다.');
+  // 재시작이 실거래를 꺼버리지 않으므로, 그 사실을 화면이 말해줘야 한다.
+  if (!note.length) {
+    note.push(s.mode === 'live'
+      ? '실거래 진행 중입니다 — 재시작해도 이어집니다. 끄려면 정지하거나 .env의 BITHUMB_LIVE를 내리세요.'
+      : '실거래 준비됨 — 버튼은 직접 누르셔야 합니다. 한 번 켜면 재시작 뒤에도 이어집니다.');
+  }
   $('ctrlNote').innerHTML = note.join(' · ');
 }
 
