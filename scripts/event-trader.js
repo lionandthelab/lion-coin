@@ -667,16 +667,13 @@ const server = http.createServer(async (req, res) => {
       json(res, 400, { ok: false, reason: `알 수 없는 모드: ${next}` });
       return;
     }
-    // 두 관문을 모두 통과해야 한다 — 통계 전략 대시보드와 같은 규약이다.
+    // 관문은 서버가 다시 본다. 화면이 버튼을 비활성화하는 것만으로는 관문이 아니다 —
+    // 오래된 탭이나 curl 한 줄이면 그대로 통과한다.
     if (next === 'live') {
-      if (!LIVE_APPROVED) {
-        json(res, 400, { ok: false, reason: '실거래가 승인되지 않았습니다 — .env에 BITHUMB_LIVE=1이 필요합니다' });
-        return;
-      }
-      if (body.confirmLive !== true) {
-        json(res, 400, { ok: false, reason: '실거래 전환에는 명시적 확인이 필요합니다' });
-        return;
-      }
+      const g = gate.canEnterLiveMode({
+        liveApproved: LIVE_APPROVED, hasKeys: HAS_KEYS, confirmLive: body.confirmLive,
+      });
+      if (!g.ok) { json(res, 400, { ok: false, reason: g.reason }); return; }
     }
     const prev = mode;
     mode = next;

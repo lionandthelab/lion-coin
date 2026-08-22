@@ -53,4 +53,30 @@ function shouldTrade(material, config = {}) {
   return { ok: true, why: null };
 }
 
-module.exports = { GRADE_RANK, shouldTrade, describeTarget };
+// 실거래 모드로 들어가도 되는가.
+//
+// **화면에서만 막는 것은 관문이 아니다.** 대시보드가 버튼을 비활성화해도
+// 오래된 탭이나 curl 한 줄이면 그대로 통과한다. 서버가 같은 조건을 다시 본다.
+//
+// 특히 API 키를 서버가 확인해야 한다. 키 없이 live로 들어가면 재료를 잡을 때마다
+// 주문이 실패하는데 화면에는 "실거래 중"이라고 적힌다 — 켜졌다고 믿는 채로
+// 아무것도 사지 못하는, 가장 헷갈리는 상태다.
+function canEnterLiveMode(input) {
+  // null은 기본 인자가 적용되지 않아 구조 분해에서 던진다. 요청 처리 경로에서
+  // 던지면 500이 나가고, 화면은 그걸 "연결 끊김"과 구별하지 못한다.
+  const { liveApproved, hasKeys, confirmLive } = (input && typeof input === 'object') ? input : {};
+  const no = (reason) => ({ ok: false, reason });
+  if (liveApproved !== true) {
+    return no('실거래가 승인되지 않았습니다 — .env에 BITHUMB_LIVE=1이 필요합니다');
+  }
+  if (hasKeys !== true) {
+    return no('빗썸 API 키가 없어 실거래로 전환할 수 없습니다 — 주문이 전부 실패합니다');
+  }
+  // 참 같은 값은 받지 않는다. 'true' 문자열이나 1이 통과하면 확인 관문이 형식이 된다.
+  if (confirmLive !== true) {
+    return no('실거래 전환에는 명시적 확인이 필요합니다');
+  }
+  return { ok: true, reason: null };
+}
+
+module.exports = { GRADE_RANK, shouldTrade, describeTarget, canEnterLiveMode };
