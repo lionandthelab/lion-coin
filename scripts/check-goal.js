@@ -12,6 +12,7 @@ const {
   parseLnbitsWallet,
   parseBlinkWallets,
   parseCoinosWallet,
+  selectWalletProvider,
 } = require('../harness/lib/core');
 
 const STATE_PATH = path.join(__dirname, '..', 'harness', 'state.json');
@@ -61,13 +62,27 @@ async function main() {
   // 공급자는 .env에 들어 있는 것으로 자동 판별한다. Coinos를 먼저 보는 이유는
   // 2026-08-16에 Blink에서 갈아탔기 때문이며, 옛 BLINK_API_KEY가 남아 있어도
   // 새 설정이 우선하도록 하기 위함이다.
+  const provider = selectWalletProvider(process.env);
   let balanceSats = null;
-  if (process.env.COINOS_TOKEN) {
-    balanceSats = await fetchCoinosBalanceSats(process.env.COINOS_TOKEN);
-  } else if (process.env.BLINK_API_KEY) {
-    balanceSats = await fetchBlinkBalanceSats(process.env.BLINK_API_KEY);
-  } else if (process.env.LNBITS_URL && process.env.LNBITS_READ_KEY) {
-    balanceSats = await fetchLnbitsBalanceSats(process.env.LNBITS_URL, process.env.LNBITS_READ_KEY);
+  let providerError = null;
+
+  if (provider && provider.formatValid === false) {
+    // 형식이 틀린 걸 이미 아는데 네트워크 호출까지 갈 필요 없다 (매번 401로 죽던 문제).
+    providerError = `${provider.provider} 토큰 형식 오류: ${provider.formatReason}`;
+  } else if (provider) {
+    try {
+      if (provider.provider === 'coinos') {
+        balanceSats = await fetchCoinosBalanceSats(provider.token);
+      } else if (provider.provider === 'blink') {
+        balanceSats = await fetchBlinkBalanceSats(provider.token);
+      } else if (provider.provider === 'lnbits') {
+        balanceSats = await fetchLnbitsBalanceSats(provider.url, provider.key);
+      }
+    } catch (err) {
+      // 형식은 멀쩡해도 토큰이 만료·취소됐을 수 있다. 회차 전체를 죽이지 않고
+      // configured:false로 내려보내 하네스가 다음 단계를 계속 진행하게 한다.
+      providerError = err.message;
+    }
   }
 
   const result = evaluateGoal(state.goal, balanceSats);
@@ -82,7 +97,14 @@ async function main() {
     fs.writeFileSync(STATE_PATH, JSON.stringify(state, null, 2) + '\n');
   }
 
-  console.log(JSON.stringify({ ...result, balanceSats, targetSats: state.goal.target_sats }));
+  console.log(
+    JSON.stringify({
+      ...result,
+      balanceSats,
+      targetSats: state.goal.target_sats,
+      ...(providerError ? { providerError } : {}),
+    })
+  );
 }
 
 main().catch((err) => {

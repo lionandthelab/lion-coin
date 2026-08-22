@@ -107,6 +107,25 @@ function validateCoinosTokenFormat(token) {
   return { valid: true };
 }
 
+// check-goal.js가 어느 지갑 공급자를 쓸지 고른다. Coinos > Blink > LNbits 순서로
+// 존재 여부만 보고 고르되(2026-08-16 Blink→Coinos 전환 후 새 설정이 항상 우선하도록),
+// 고른 공급자의 토큰 형식이 틀렸으면 조용히 다음 공급자로 넘어가지 않고
+// formatValid=false로 그 사실을 알린다 — 네트워크 호출 전에 걸러내기 위함이다.
+function selectWalletProvider(env) {
+  if (env.COINOS_TOKEN) {
+    const fmt = validateCoinosTokenFormat(env.COINOS_TOKEN);
+    return { provider: 'coinos', token: env.COINOS_TOKEN, formatValid: fmt.valid, formatReason: fmt.reason };
+  }
+  if (env.BLINK_API_KEY) {
+    const fmt = validateBlinkKeyFormat(env.BLINK_API_KEY);
+    return { provider: 'blink', token: env.BLINK_API_KEY, formatValid: fmt.valid, formatReason: fmt.reason };
+  }
+  if (env.LNBITS_URL && env.LNBITS_READ_KEY) {
+    return { provider: 'lnbits', url: env.LNBITS_URL, key: env.LNBITS_READ_KEY, formatValid: true };
+  }
+  return null;
+}
+
 function logFileName(date = new Date()) {
   const kst = new Intl.DateTimeFormat('sv-SE', {
     timeZone: 'Asia/Seoul',
@@ -125,5 +144,6 @@ module.exports = {
   validateBlinkKeyFormat,
   parseCoinosWallet,
   validateCoinosTokenFormat,
+  selectWalletProvider,
   logFileName,
 };
