@@ -1,7 +1,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 
-const { GRADE_RANK, shouldTrade, describeTarget } = require('../src/trade-gate');
+const { GRADE_RANK, shouldTrade, describeTarget, canEnterLiveMode } = require('../src/trade-gate');
 const { classifyMaterial } = require('../src/material');
 
 // 데몬의 매매 관문. 지금까지 scripts/event-trader.js 안에 있어 테스트가 닿지 않았다.
@@ -109,4 +109,53 @@ test('shouldTrade: 모르는 하한 등급은 통과시키지 않는다', () => 
   const r = shouldTrade(mat(), { ...cfg, minGrade: 'X' });
   assert.equal(r.ok, false);
   assert.match(r.why, /하한|설정/);
+});
+
+// ---- 실거래 전환 관문 ----
+//
+// **화면에서만 막는 것은 관문이 아니다.** 대시보드는 키가 없으면 버튼을 비활성화
+// 하지만, 서버는 그 조건을 전혀 보지 않았다. curl 한 줄이나 오래된 탭이면 그대로
+// 통과한다 — 키 없이 live로 들어가면 재료를 잡을 때마다 주문이 실패하고,
+// 화면에는 "실거래 중"이라고 적혀 있다.
+
+test('canEnterLiveMode: 승인·키·확인이 모두 있어야 통과한다', () => {
+  const r = canEnterLiveMode({ liveApproved: true, hasKeys: true, confirmLive: true });
+  assert.equal(r.ok, true);
+  assert.equal(r.reason, null);
+});
+
+test('canEnterLiveMode: .env 승인이 없으면 막는다', () => {
+  const r = canEnterLiveMode({ liveApproved: false, hasKeys: true, confirmLive: true });
+  assert.equal(r.ok, false);
+  assert.match(r.reason, /BITHUMB_LIVE/);
+});
+
+test('canEnterLiveMode: API 키가 없으면 막는다', () => {
+  // 키 없이 live로 들어가면 재료를 잡을 때마다 주문이 실패하는데
+  // 화면에는 "실거래 중"이라고 적힌다 — 가장 헷갈리는 상태다.
+  const r = canEnterLiveMode({ liveApproved: true, hasKeys: false, confirmLive: true });
+  assert.equal(r.ok, false);
+  assert.match(r.reason, /키/);
+});
+
+test('canEnterLiveMode: 명시적 확인이 없으면 막는다', () => {
+  const r = canEnterLiveMode({ liveApproved: true, hasKeys: true, confirmLive: false });
+  assert.equal(r.ok, false);
+  assert.match(r.reason, /확인/);
+});
+
+test('canEnterLiveMode: confirmLive는 true여야 한다 — 참 같은 값은 안 된다', () => {
+  // JSON 본문의 'true' 문자열이나 1이 통과하면 확인 관문이 형식적인 것이 된다.
+  for (const v of ['true', 1, {}, [], 'yes']) {
+    assert.equal(canEnterLiveMode({ liveApproved: true, hasKeys: true, confirmLive: v }).ok, false, String(v));
+  }
+});
+
+test('canEnterLiveMode: 인자가 없어도 던지지 않고 막는다', () => {
+  // 요청 처리 경로에서 던지면 500이 나가고, 화면은 그걸 "연결 끊김"과 구별하지 못한다.
+  for (const bad of [undefined, null, {}, 'nope']) {
+    const r = canEnterLiveMode(bad);
+    assert.equal(r.ok, false, String(bad));
+    assert.equal(typeof r.reason, 'string');
+  }
 });
